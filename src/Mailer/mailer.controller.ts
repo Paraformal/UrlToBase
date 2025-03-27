@@ -2,7 +2,7 @@ import { Controller, Post, Body } from '@nestjs/common';
 import { MailerService } from './mailer.service';
 import { SendMailDto } from './MailerDtos/mailer.dto';
 
-@Controller('mail')
+@Controller('api/ntg-ms/mailer')
 export class MailerController {
   constructor(private readonly mailerService: MailerService) {}
 
