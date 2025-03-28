@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import * as mime from 'mime-types';
 import * as sharp from 'sharp';
-import { LoggerService } from '../utils/logger.service';
+import { LoggerService } from '../Utils/logger.service';
 import { ValidateImageDto } from './ImageValidation_Dto/ImageValidation.dto';
 
 @Injectable()
@@ -15,7 +15,7 @@ export class ImageValidationService {
     try {
       const { url } = createFileDto;
 
-      this.logger.log(`Received request to validate image: ${url}`);
+      // this.logger.log(`Received request to validate image: ${url}`);
 
       // Download the file
       const response = await axios.get(url, { responseType: 'arraybuffer' });

@@ -1,7 +1,7 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { ImageValidationService } from './ImageValidation.service';
 import { ValidateImageDto } from './ImageValidation_Dto/ImageValidation.dto';
-import { LoggerService } from '../utils/logger.service';
+import { LoggerService } from '../Utils/logger.service';
 
 @Controller('api/ntg-ms/image/')
 export class ImageValidationController {
@@ -13,13 +13,13 @@ export class ImageValidationController {
   @Post('validate')
   async validateImage(@Body() validateImageDto: ValidateImageDto) {
     if (!validateImageDto.url) {
-      this.logger.error('Request missing URL.');
+      // this.logger.error('Request missing URL.');
       return { error: 'URL is required' };
     }
 
-    this.logger.log(
-      `Processing request for image URL: ${validateImageDto.url}`,
-    );
+    // this.logger.log(
+    //   `Processing request for image URL: ${validateImageDto.url}`,
+    // );
 
     try {
       const result =
