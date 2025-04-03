@@ -7,7 +7,7 @@ export class ZipExtractController {
   constructor(private readonly zipExtractService: ZipExtractService) {}
 
   @Post('extract/zip')
-  async extractZip(@Body() { url }: ExtractZipDto) {
-    return this.zipExtractService.extractAndUploadZip(url);
+  async extractZip(@Body() { url, userEmail }: ExtractZipDto) {
+    return this.zipExtractService.extractAndUploadZip(url, userEmail);
   }
 }
