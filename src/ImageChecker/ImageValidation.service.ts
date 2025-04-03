@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
-import * as mime from 'mime-types';
+// import * as mime from 'mime-types';
 import * as sharp from 'sharp';
 import { LoggerService } from '../Utils/logger.service';
 import { ValidateImageDto } from './ImageValidation_Dto/ImageValidation.dto';
@@ -25,17 +25,17 @@ export class ImageValidationService {
         throw new Error('Image download failed.');
       }
 
-      // Get file extension and content type
-      const mimeType = mime.lookup(url);
-      const fileExtension = mime.extension(
-        mimeType || 'application/octet-stream',
-      );
+      // // Get file extension and content type
+      // const mimeType = mime.lookup(url);
+      // const fileExtension = mime.extension(
+      //   mimeType || 'application/octet-stream',
+      // );
 
-      // Check if the file is an image
-      if (!['jpeg', 'jpg', 'png'].includes(fileExtension)) {
-        this.logger.error('File is not an image');
-        return { valid: false, errorMessage: 'File is not an image' };
-      }
+      // // Check if the file is an image
+      // if (!['jpeg', 'jpg', 'png'].includes(fileExtension)) {
+      //   this.logger.error('File is not an image');
+      //   return { valid: false, errorMessage: 'File is not an image' };
+      // }
 
       // Validate image width and DPI
       await this.checkImageDimensionsAndDPI(response.data);
