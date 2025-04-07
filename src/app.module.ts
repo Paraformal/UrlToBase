@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { UrlToBaseModule } from './UrlToBase/urlToBase.module';
+import { UrlToBaseModule } from './UrlToBase_Deprecated/urlToBase.module';
 import { LoggerService } from './Utils/logger.service';
 import { MailerModule } from './Mailer/mailer.module';
 import { ImageValidationModule } from './ImageChecker/ImageValidation.module';
