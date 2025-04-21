@@ -68,103 +68,59 @@ export class ZipExtractService {
       const zipEntries = zip.getEntries();
       this.logger.log(`Extracted ${zipEntries.length} files from ZIP.`);
 
-      // // Checking for disallowed scripts and plugins in HTML files
-      // const pluginCheck = checkScriptsAndPluginsNotAllowed(zip);
-      // if (!pluginCheck.success) {
-      //   const pluginErrors = pluginCheck.errors.join('<br/>');
-      //   await this.sendErrorEmail(
-      //     userEmail,
-      //     url,
-      //     `Disallowed scripts/plugins found:<br/>${pluginErrors}`,
-      //   );
-      //   return {
-      //     error: 'Disallowed scripts or plugins in ZIP HTML.',
-      //     details: pluginCheck.errors,
-      //   };
-      // }
+      // 🧠 Collect all validation issues
+      const allErrors: string[] = [];
 
-      // // Checking for <map> tag and CSS rules in HTML and CSS files
+      const pluginCheck = checkScriptsAndPluginsNotAllowed(zip);
+      if (!pluginCheck.success) {
+        allErrors.push(
+          `Disallowed scripts/plugins found:<br/>${pluginCheck.errors.join('<br/>')}`,
+        );
+      }
 
-      // const htmlCssCheck = checkMapTagAndCssRules(zip);
-      // if (!htmlCssCheck.success) {
-      //   const ruleErrors = htmlCssCheck.errors.join('<br/>');
-      //   await this.sendErrorEmail(
-      //     userEmail,
-      //     url,
-      //     `Disallowed HTML or CSS rules found:<br/>${ruleErrors}`,
-      //   );
-      //   return {
-      //     error: 'Disallowed HTML/CSS rules in ZIP.',
-      //     details: htmlCssCheck.errors,
-      //   };
-      // }
+      const htmlCssCheck = checkMapTagAndCssRules(zip);
+      if (!htmlCssCheck.success) {
+        allErrors.push(
+          `Disallowed HTML or CSS rules found:<br/>${htmlCssCheck.errors.join('<br/>')}`,
+        );
+      }
 
-      // // Checking for nested background styles, videos, images
+      const bgStyleCheck = checkBackgroundStyles(zip);
+      if (!bgStyleCheck.success) {
+        allErrors.push(
+          `Background styling violations found:<br/>${bgStyleCheck.errors.join('<br/>')}`,
+        );
+      }
 
-      // const bgStyleCheck = checkBackgroundStyles(zip);
-      // if (!bgStyleCheck.success) {
-      //   const bgErrors = bgStyleCheck.errors.join('<br/>');
-      //   await this.sendErrorEmail(
-      //     userEmail,
-      //     url,
-      //     `Background styling violations found:<br/>${bgErrors}`,
-      //   );
-      //   return {
-      //     error: 'Background styling issues in ZIP HTML/CSS.',
-      //     details: bgStyleCheck.errors,
-      //   };
-      // }
+      const htmlEntry = zipEntries.find((entry) =>
+        entry.entryName.toLowerCase().endsWith('.html'),
+      );
 
-      // // Checking for embedded videos in HTML files
+      if (htmlEntry) {
+        const htmlContent = htmlEntry.getData().toString('utf8');
+        const videoCheckResult = checkEmbeddedVideosInHtml(htmlContent);
+        if (!videoCheckResult.success) {
+          allErrors.push(
+            `Embedded video found in HTML. Please use a static preview image linking to an external site (e.g., YouTube or Vimeo).<br/>${videoCheckResult.errors.join('<br/>')}`,
+          );
+        }
+      }
 
-      // const htmlEntry = zipEntries.find((entry) =>
-      //   entry.entryName.toLowerCase().endsWith('.html'),
-      // );
+      const dimensionCheck = checkImageDimensionsMatchHtml(zip);
+      if (!dimensionCheck.success) {
+        allErrors.push(
+          `Image dimension mismatch found:<br/>${dimensionCheck.errors.join('<br/>')}`,
+        );
+      }
 
-      // if (htmlEntry) {
-      //   const htmlContent = htmlEntry.getData().toString('utf8');
+      // ❌ Send summary email if any failed
+      if (allErrors.length > 0) {
+        const combinedMessage = allErrors.join('<br/><br/>');
+        await this.sendErrorEmail(userEmail, url, combinedMessage);
+        return { error: 'Validation failed.', details: allErrors };
+      }
 
-      //   const videoCheckResult = checkEmbeddedVideosInHtml(htmlContent);
-      //   // console.log(
-      //   //   `Embedded video check result: ${JSON.stringify(videoCheckResult)}`,
-      //   // );
-      //   if (!videoCheckResult.success) {
-      //     const videoErrors = videoCheckResult.errors.join('<br/>');
-
-      //     await this.sendErrorEmail(
-      //       userEmail,
-      //       url,
-      //       `Embedded video found in HTML. Please use a static preview image linking to an external site (e.g., YouTube or Vimeo).<br/>${videoErrors}`,
-      //     );
-
-      //     return {
-      //       error:
-      //         'Embedded video found in HTML. Static preview image required.',
-      //       details: videoCheckResult.errors,
-      //     };
-      //   }
-      // }
-
-      // // Checking if image dimensions in HTML match actual image dimensions in ZIP
-
-      // const dimensionCheck = checkImageDimensionsMatchHtml(zip);
-      // if (!dimensionCheck.success) {
-      //   const dimensionErrors = dimensionCheck.errors.join('<br/>');
-
-      //   await this.sendErrorEmail(
-      //     userEmail,
-      //     url,
-      //     `Image dimension mismatch found:<br/>${dimensionErrors}`,
-      //   );
-
-      //   return {
-      //     error: 'Image dimension mismatch in ZIP HTML.',
-      //     details: dimensionCheck.errors,
-      //   };
-      // }
-
-      // ✅ Proceed with uploading
-
+      // ✅ Proceed with upload
       const uploadedFiles = await Promise.all(
         zipEntries.map(async (entry) => {
           if (entry.isDirectory) return null;
@@ -201,11 +157,7 @@ export class ZipExtractService {
 
           if (signedUrlError) {
             this.logger.error(
-              `Failed to generate signed URL for ${fileName}: ${JSON.stringify(
-                signedUrlError,
-                null,
-                2,
-              )}`,
+              `Failed to generate signed URL for ${fileName}: ${JSON.stringify(signedUrlError, null, 2)}`,
             );
             return null;
           }

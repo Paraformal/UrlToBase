@@ -1,71 +1,18 @@
-// import * as AdmZip from 'adm-zip';
-
-// interface ValidationResult {
-//   success: boolean;
-//   errors: string[];
-// }
-
-// export function checkMapTagAndCssRules(zip: AdmZip): ValidationResult {
-//   const entries = zip.getEntries();
-//   const errors: string[] = [];
-
-//   for (const entry of entries) {
-//     if (entry.isDirectory) continue;
-
-//     const entryName = entry.entryName.toLowerCase();
-
-//     if (entryName.endsWith('.html')) {
-//       const htmlContent = entry.getData().toString('utf8');
-
-//       // Check for <map> tag
-//       const hasMapTag = /<\s*map[^>]*>/i.test(htmlContent);
-//       if (hasMapTag) {
-//         errors.push(`Found <map> tag in ${entry.entryName}`);
-//       }
-
-//       // Check for float or position in inline <style> tags or style attributes
-//       const floatRegex = /float\s*:/i;
-//       const positionRegex = /position\s*:/i;
-
-//       const hasFloat = floatRegex.test(htmlContent);
-//       const hasPosition = positionRegex.test(htmlContent);
-
-//       if (hasFloat) {
-//         errors.push(`CSS float property used in ${entry.entryName}`);
-//       }
-//       if (hasPosition) {
-//         errors.push(`CSS position property used in ${entry.entryName}`);
-//       }
-//     }
-
-//     // If external CSS files exist (.css), scan those too
-//     if (entryName.endsWith('.css')) {
-//       const cssContent = entry.getData().toString('utf8');
-
-//       if (/float\s*:/i.test(cssContent)) {
-//         errors.push(`CSS float property used in ${entry.entryName}`);
-//       }
-//       if (/position\s*:/i.test(cssContent)) {
-//         errors.push(`CSS position property used in ${entry.entryName}`);
-//       }
-//     }
-//   }
-
-//   return {
-//     success: errors.length === 0,
-//     errors,
-//   };
-// }
 import * as AdmZip from 'adm-zip';
 
 interface ValidationResult {
   success: boolean;
   errors: string[];
+  fixedHtmlFiles?: { [filename: string]: string };
 }
 
-export function checkMapTagAndCssRules(zip: AdmZip): ValidationResult {
+export function checkMapTagAndCssRules(
+  zip: AdmZip,
+  autoFix = true,
+): ValidationResult {
   const entries = zip.getEntries();
   const errors: string[] = [];
+  const fixedHtmlFiles: Record<string, string> = {};
 
   const selfClosingTags = new Set([
     'area',
@@ -92,38 +39,21 @@ export function checkMapTagAndCssRules(zip: AdmZip): ValidationResult {
     if (entryName.endsWith('.html')) {
       const htmlContent = entry.getData().toString('utf8');
       const lines = htmlContent.split('\n');
-
-      // Check for <map> tag and inline float/position CSS
-      lines.forEach((line, index) => {
-        const lineNum = index + 1;
-        if (/<\s*map[^>]*>/i.test(line)) {
-          errors.push(
-            `Found <map> tag in ${entry.entryName} (line ${lineNum})`,
-          );
-        }
-        if (/float\s*:/i.test(line)) {
-          errors.push(
-            `CSS float property used in ${entry.entryName} (line ${lineNum})`,
-          );
-        }
-        if (/position\s*:/i.test(line)) {
-          errors.push(
-            `CSS position property used in ${entry.entryName} (line ${lineNum})`,
-          );
-        }
-      });
-
-      // Track unmatched tags with line numbers
       const tagStack: { tag: string; line: number }[] = [];
-      const tagRegex = /<\/?([a-z0-9]+)(\s[^>]*)?>/gi;
+
+      const tagRegex = /<\/?([a-z0-9]+)(\s[^>]*?)?>/gi;
+      const newLines: string[] = [];
 
       lines.forEach((line, index) => {
         const lineNum = index + 1;
+        const workingLine = line;
         let match;
+
         while ((match = tagRegex.exec(line)) !== null) {
+          const fullTag = match[0];
           const [, rawTag] = match;
           const tag = rawTag.toLowerCase();
-          const isClosing = match[0][1] === '/';
+          const isClosing = fullTag.startsWith('</');
 
           if (selfClosingTags.has(tag)) continue;
 
@@ -142,14 +72,48 @@ export function checkMapTagAndCssRules(zip: AdmZip): ValidationResult {
             tagStack.push({ tag, line: lineNum });
           }
         }
+
+        // Check for map/float/position issues
+        if (/<\s*map[^>]*>/i.test(line)) {
+          errors.push(
+            `Found <map> tag in ${entry.entryName} (line ${lineNum})`,
+          );
+        }
+        if (/float\s*:/i.test(line)) {
+          errors.push(
+            `CSS float property used in ${entry.entryName} (line ${lineNum})`,
+          );
+        }
+        if (/position\s*:/i.test(line)) {
+          errors.push(
+            `CSS position property used in ${entry.entryName} (line ${lineNum})`,
+          );
+        }
+
+        newLines.push(workingLine);
       });
 
-      // Unclosed tags left in stack
-      tagStack.forEach(({ tag, line }) =>
-        errors.push(
-          `Unclosed tag <${tag}> in ${entry.entryName} (line ${line})`,
-        ),
-      );
+      // If autofix is enabled, append missing closing tags
+      if (autoFix && tagStack.length > 0) {
+        tagStack
+          .slice()
+          .reverse()
+          .forEach(({ tag }) => {
+            const closeTag = `</${tag}>`;
+            newLines.push(closeTag);
+            errors.push(
+              `Auto-inserted missing closing tag ${closeTag} at end of ${entry.entryName}`,
+            );
+          });
+
+        fixedHtmlFiles[entry.entryName] = newLines.join('\n');
+      } else {
+        tagStack.forEach(({ tag, line }) => {
+          errors.push(
+            `Unclosed tag <${tag}> in ${entry.entryName} (line ${line})`,
+          );
+        });
+      }
     }
 
     if (entryName.endsWith('.css')) {
@@ -175,5 +139,6 @@ export function checkMapTagAndCssRules(zip: AdmZip): ValidationResult {
   return {
     success: errors.length === 0,
     errors,
+    fixedHtmlFiles: autoFix ? fixedHtmlFiles : undefined,
   };
 }
