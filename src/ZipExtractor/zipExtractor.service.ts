@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import axios from 'axios';
+// import axios from 'axios';
 import * as AdmZip from 'adm-zip';
 import { createClient } from '@supabase/supabase-js';
 import { MailerService } from '../Mailer/mailer.service';
@@ -21,26 +21,24 @@ export class ZipExtractService {
 
   constructor(private readonly mailerService: MailerService) {}
 
-  async extractAndUploadZip(url: string, userEmail: string) {
+  async extractAndUploadZip(base64Zip: string, userEmail: string) {
     try {
-      this.logger.log(`Downloading ZIP from: ${url}`);
+      this.logger.log(`Received ZIP file in base64 format`);
 
-      const response = await axios.get(url, { responseType: 'arraybuffer' });
-
-      if (!response || response.status !== 200) {
-        this.logger.error(
-          `Failed to download ZIP file. Status: ${response.status}`,
-        );
-        return { error: 'Failed to download ZIP file.' };
+      let buffer: Buffer;
+      try {
+        buffer = Buffer.from(base64Zip, 'base64');
+      } catch (err) {
+        this.logger.error(`Invalid base64 input`);
+        return { error: 'Invalid base64 ZIP file.' };
       }
 
-      const fileSizeKB = Math.round(response.data.byteLength / 1024);
-      this.logger.log(`Downloaded file size: ${fileSizeKB} KB`);
+      const fileSizeKB = Math.round(buffer.byteLength / 1024);
+      this.logger.log(`Received file size: ${fileSizeKB} KB`);
 
       if (fileSizeKB === 0) {
         await this.sendErrorEmail(
           userEmail,
-          url,
           'The ZIP file uploaded is empty (0 KB). Please try again!',
         );
         return { error: 'The ZIP file is empty (0 KB).' };
@@ -49,22 +47,20 @@ export class ZipExtractService {
       if (fileSizeKB > 300) {
         await this.sendErrorEmail(
           userEmail,
-          url,
           'The ZIP file uploaded is too large (more than 300 KB). Please try again!',
         );
         return { error: 'The ZIP file is too large (more than 300 KB).' };
       }
 
-      if (!this.isZipFile(response.data)) {
+      if (!this.isZipFile(buffer)) {
         await this.sendErrorEmail(
           userEmail,
-          url,
           'The ZIP file uploaded is not a valid zip file. Please try again!',
         );
         return { error: 'The file is not a valid ZIP file.' };
       }
 
-      const zip = new AdmZip(response.data);
+      const zip = new AdmZip(buffer);
       const zipEntries = zip.getEntries();
       this.logger.log(`Extracted ${zipEntries.length} files from ZIP.`);
 
@@ -116,7 +112,7 @@ export class ZipExtractService {
       // ❌ Send summary email if any failed
       if (allErrors.length > 0) {
         const combinedMessage = allErrors.join('<br/><br/>');
-        await this.sendErrorEmail(userEmail, url, combinedMessage);
+        await this.sendErrorEmail(userEmail, combinedMessage);
         return { error: 'Validation failed.', details: allErrors };
       }
 
@@ -178,18 +174,13 @@ export class ZipExtractService {
     }
   }
 
-  private async sendErrorEmail(
-    userEmail: string,
-    zipUrl: string,
-    errorMessage: string,
-  ) {
+  private async sendErrorEmail(userEmail: string, errorMessage: string) {
     const mailDto: SendMailDto = {
       receiver: userEmail,
       subject: 'ZIP Extraction Failed',
       emailBody: `<p>Dear Customer,</p>
                   <p>Unfortunately, your ZIP extraction request has failed.</p>
                   <p><strong>Error Details:</strong> ${errorMessage}</p>
-                  <p><strong>ZIP File URL:</strong> <a href="${zipUrl}">${zipUrl}</a></p>
                   <p>Please try again or contact support for assistance.</p>
                   <p>Best Regards,</p>
                   <p>Your Support Team</p>`,
