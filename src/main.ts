@@ -7,7 +7,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
   app.enableCors();
-  app.use(bodyParser.json({ limit: '1mb' }));
+  app.use(bodyParser.json({ limit: '5mb' }));
   await app.listen(PORT, () => {
     Logger.log(`Server is running on http://localhost:${PORT}`, 'Bootstrap');
     const server = app.getHttpServer();
