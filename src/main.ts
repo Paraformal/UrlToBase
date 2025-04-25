@@ -12,7 +12,7 @@ async function bootstrap() {
 
   // ✅ FULL CORS config for credentials + custom origin + headers
   app.enableCors({
-    origin: 'https://preview--zip-it-to-api.lovable.app',
+    origin: 'https://zip-it-to-api.lovable.app',
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Accept', 'Authorization'],
