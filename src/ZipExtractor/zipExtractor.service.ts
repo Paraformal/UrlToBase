@@ -49,22 +49,13 @@ import { checkScriptsAndPluginsNotAllowed } from '../Utils/checkScriptsAndPlugin
 export class ZipExtractService {
   private readonly logger = new Logger(ZipExtractService.name);
   private supabase = createClient(
-    process.env.SUPABASE_URL, // Supabase URL to connect to the database
-    process.env.SUPABASE_KEY, // Supabase API key for authentication
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_KEY,
   );
-  private bucketName = process.env.SUPABASE_BUCKET_NAME; // Bucket name for file storage
+  private bucketName = process.env.SUPABASE_BUCKET_NAME;
 
-  // Constructor to inject MailerService to send error notifications via email
   constructor(private readonly mailerService: MailerService) {}
 
-  /**
-   * This method processes the uploaded base64-encoded ZIP file, extracts its contents, validates them,
-   * uploads valid files to Supabase storage, and sends email notifications if there are validation errors.
-   *
-   * @param base64Zip - A base64-encoded string representing the ZIP file that the user uploaded.
-   * @param userEmail - The email address of the user who uploaded the ZIP file.
-   * @returns An object containing either the URLs of the uploaded files or error details.
-   */
   async extractAndUploadZip(base64Zip: string, userEmail: string) {
     try {
       this.logger.log(`Received ZIP file in base64 format`);
@@ -117,8 +108,7 @@ export class ZipExtractService {
       const zipEntries = zip.getEntries();
       this.logger.log(`Extracted ${zipEntries.length} files from ZIP.`);
 
-      // === VALIDATION CHECKS ===
-
+      // === Perform all validations ===
       const results: Array<{
         check: string;
         success: boolean;
@@ -177,34 +167,86 @@ export class ZipExtractService {
         errors: dimensionCheck.errors,
       });
 
-      return {
-        success: results.every((result) => result.success),
-        results,
-      };
+      // If any check failed, return the validation results early
+      if (!results.every((result) => result.success)) {
+        return {
+          success: false,
+          results,
+        };
+      }
+
+      // === If all validations pass, continue with upload ===
+      const uploadedFiles = await Promise.all(
+        zipEntries.map(async (entry) => {
+          if (entry.isDirectory) return null;
+
+          const fullPath = entry.entryName;
+          const fileName = fullPath.split('/').pop() || fullPath;
+          const fileExt = fileName.split('.').pop() || 'unknown';
+          const fileBuffer = entry.getData();
+
+          if (!fileName || !fileBuffer?.length) {
+            this.logger.warn(`Skipping invalid or empty file: ${fileName}`);
+            return null;
+          }
+
+          const uploadPath = `extracted/${fileName}`;
+
+          const { error } = await this.supabase.storage
+            .from(this.bucketName)
+            .upload(uploadPath, fileBuffer, {
+              contentType: 'application/octet-stream',
+              upsert: true,
+            });
+
+          if (error) {
+            this.logger.error(
+              `Failed to upload ${fileName}: ${JSON.stringify(error, null, 2)}`,
+            );
+            return null;
+          }
+
+          const { data, error: signedUrlError } = await this.supabase.storage
+            .from(this.bucketName)
+            .createSignedUrl(uploadPath, 60 * 60); // 1 hour
+
+          if (signedUrlError) {
+            this.logger.error(
+              `Failed to generate signed URL for ${fileName}: ${JSON.stringify(
+                signedUrlError,
+                null,
+                2,
+              )}`,
+            );
+            return null;
+          }
+
+          return {
+            FileName: fileName,
+            FileExt: fileExt,
+            Url: data.signedUrl,
+          };
+        }),
+      );
+
+      const files = uploadedFiles.filter((file) => file !== null);
+      return { Files: files };
     } catch (error) {
       this.logger.error(`Error extracting ZIP: ${error.message}`);
-      return {
-        success: false,
-        results: [],
-        error: `ZIP extraction failed: ${error.message}`,
-      };
+      return { error: `ZIP extraction failed: ${error.message}` };
     }
   }
-  /**
-   * Sends an error email to the user if validation fails.
-   *
-   * @param userEmail - The email address of the user who uploaded the ZIP file.
-   * @param errorMessage - A detailed error message explaining the validation failure.
-   */
+
   private async sendErrorEmail(userEmail: string, errorMessage: string) {
     const mailDto: SendMailDto = {
       receiver: userEmail,
       subject: 'ZIP Extraction Failed',
       emailBody: `<p>Dear Customer,</p>
-                  <p>Unfortunately, your ZIP extraction request has failed due to validation errors.</p>
-                  <p><strong>Error Details:</strong><br/>${errorMessage}</p>
-                  <p>Please try again or contact support for further assistance.</p>
-                  <p>Best regards,<br/>Your Support Team</p>`,
+                  <p>Unfortunately, your ZIP extraction request has failed.</p>
+                  <p><strong>Error Details:</strong> ${errorMessage}</p>
+                  <p>Please try again or contact support for assistance.</p>
+                  <p>Best Regards,</p>
+                  <p>Your Support Team</p>`,
       cc: [],
       bcc: [],
     };
@@ -220,15 +262,8 @@ export class ZipExtractService {
     }
   }
 
-  /**
-   * Checks if the provided data buffer represents a valid ZIP file.
-   * The check is performed by verifying the "magic number" for ZIP files.
-   *
-   * @param data - The buffer containing the binary data of the file.
-   * @returns A boolean indicating whether the buffer is a valid ZIP file.
-   */
   private isZipFile(data: Buffer): boolean {
     const magicNumber = data.slice(0, 2).toString('utf8');
-    return magicNumber === 'PK'; // Valid ZIP files begin with "PK"
+    return magicNumber === 'PK';
   }
 }
