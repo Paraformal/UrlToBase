@@ -52,8 +52,7 @@ export class MindstudioUploadService {
 
       return {
         success: parsedOutput.success,
-        cases: parsedOutput.cases,
-        errorLogUrl: parsedOutput.errorLogUrl || null,
+        results: parsedOutput.results,
       };
     } catch (error) {
       console.error('Mindstudio upload failed: ', error.message);
