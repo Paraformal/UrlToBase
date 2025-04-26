@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { MindstudioUploadDto } from './MindStudio-api-Dtos/mindstudio-api-dto';
+import axios from 'axios';
 
 @Injectable()
 export class MindstudioUploadService {
@@ -10,7 +11,6 @@ export class MindstudioUploadService {
     try {
       const { email, attachment } = dto;
 
-      // Prepare the request payload
       const requestBody = {
         appId: process.env.WORKER_ID,
         variables: {
@@ -20,38 +20,26 @@ export class MindstudioUploadService {
         workflow: process.env.WORKFLOW_NAME,
       };
 
-      // Call the MindStudio API using fetch
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
+      const response = await axios.post(this.apiUrl, requestBody, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody),
+        timeout: 120_000, // <<< 120 seconds timeout (2 minutes)
       });
 
-      // Check if the request was successful
-      if (!response.ok) {
-        throw new Error(
-          `MindStudio API request failed: ${response.statusText}`,
-        );
-      }
+      const data = response.data;
 
-      // Parse the response body as JSON
-      const data = await response.json();
-
-      // Extract the relevant fields from the response
+      // Continue with your existing parsing logic
       const result = data?.result;
       const billingCost = data?.billingCost;
 
       console.log('Upload result: ', result);
       console.log('Execution cost: ', billingCost);
 
-      // Extract and clean the final output
       const finalOutput = this.extractLastValueFromDebugLogs(data);
       console.log('Extracted final output: ', finalOutput);
 
-      // Clean and structure the final output
       const structuredOutput = this.cleanAndStructureFinalOutput(finalOutput);
       console.log('Structured final output: ', structuredOutput);
 
