@@ -25,7 +25,7 @@ export class MindstudioUploadService {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        timeout: 120_000, // <<< 120 seconds timeout (2 minutes)
+        timeout: 300_000, // <<< 120 seconds timeout (2 minutes)
       });
 
       const data = response.data;
