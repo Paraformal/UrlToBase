@@ -1,5 +1,4 @@
 import * as AdmZip from 'adm-zip';
-// import * as cheerio from 'cheerio';
 
 const DISALLOWED_TAGS = ['script', 'embed', 'object', 'iframe', 'applet'];
 const DISALLOWED_FILE_EXTENSIONS = [
@@ -23,7 +22,6 @@ export function checkScriptsAndPluginsNotAllowed(zip: AdmZip): {
   errors: string[];
 } {
   const errors: string[] = [];
-
   const zipEntries = zip.getEntries();
 
   zipEntries.forEach((entry) => {
@@ -40,7 +38,7 @@ export function checkScriptsAndPluginsNotAllowed(zip: AdmZip): {
         DISALLOWED_TAGS.some((tag) => new RegExp(`<${tag}\\b`, 'i').test(line))
       ) {
         errors.push(
-          `Disallowed tag in ${entry.entryName} (line ${lineNumber})`,
+          `Disallowed tag found in ${entry.entryName} (line ${lineNumber})`,
         );
       }
 
@@ -51,7 +49,7 @@ export function checkScriptsAndPluginsNotAllowed(zip: AdmZip): {
         )
       ) {
         errors.push(
-          `Disallowed keyword usage in ${entry.entryName} (line ${lineNumber})`,
+          `Disallowed keyword found in ${entry.entryName} (line ${lineNumber})`,
         );
       }
 
@@ -62,14 +60,15 @@ export function checkScriptsAndPluginsNotAllowed(zip: AdmZip): {
       );
       if (fileExtPattern.test(line)) {
         errors.push(
-          `Suspicious file reference in ${entry.entryName} (line ${lineNumber})`,
+          `Suspicious file reference found in ${entry.entryName} (line ${lineNumber})`,
         );
       }
     });
   });
 
+  // Return the check name with success/failure emojis
   return {
     success: errors.length === 0,
-    errors,
+    errors: [`Scripts and Plugins Check: ${errors.length === 0 ? '✅' : '❌'}`],
   };
 }

@@ -46,7 +46,6 @@ export function checkMapTagAndCssRules(
 
       lines.forEach((line, index) => {
         const lineNum = index + 1;
-        const workingLine = line;
         let match;
 
         while ((match = tagRegex.exec(line)) !== null) {
@@ -89,8 +88,6 @@ export function checkMapTagAndCssRules(
             `CSS position property used in ${entry.entryName} (line ${lineNum})`,
           );
         }
-
-        newLines.push(workingLine);
       });
 
       // If autofix is enabled, append missing closing tags
@@ -136,9 +133,11 @@ export function checkMapTagAndCssRules(
     }
   }
 
+  // Return the check name with success/failure emojis
   return {
     success: errors.length === 0,
-    errors,
-    fixedHtmlFiles: autoFix ? fixedHtmlFiles : undefined,
+    errors: [
+      `Map Tag and CSS Rules Check: ${errors.length === 0 ? '✅' : '❌'}`,
+    ],
   };
 }

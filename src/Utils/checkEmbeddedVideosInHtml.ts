@@ -64,8 +64,9 @@ export function checkEmbeddedVideosInHtml(html: string): {
     }
   }
 
+  // Return the check name with success/failure emojis
   return {
     success: errors.length === 0,
-    errors,
+    errors: [`Embedded Videos Check: ${errors.length === 0 ? '✅' : '❌'}`],
   };
 }

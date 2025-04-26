@@ -44,8 +44,6 @@ import { checkEmbeddedVideosInHtml } from '../Utils/checkEmbeddedVideosInHtml';
 import { checkMapTagAndCssRules } from '../Utils/checkMapTagAndCssRules';
 import { checkBackgroundStyles } from '../Utils/checkBackgroundStyles';
 import { checkScriptsAndPluginsNotAllowed } from '../Utils/checkScriptsAndPluginsNotAllowed';
-import * as fs from 'fs';
-import * as path from 'path';
 
 @Injectable()
 export class ZipExtractService {
@@ -69,219 +67,129 @@ export class ZipExtractService {
    */
   async extractAndUploadZip(base64Zip: string, userEmail: string) {
     try {
-      // Log that the ZIP file has been received in base64 format.
       this.logger.log(`Received ZIP file in base64 format`);
 
       let buffer: Buffer;
       try {
-        // Attempt to convert the base64-encoded string into a buffer (binary data)
         buffer = Buffer.from(base64Zip, 'base64');
       } catch (err) {
-        // If base64 conversion fails, return an error
         this.logger.error(`Invalid base64 input`);
-        return { error: 'Invalid base64 ZIP file.' };
+        return { success: false, cases: {}, error: 'Invalid base64 ZIP file.' };
       }
 
-      // Calculate and log the file size in kilobytes (KB)
       const fileSizeKB = Math.round(buffer.byteLength / 1024);
       this.logger.log(`Received file size: ${fileSizeKB} KB`);
 
-      // Validation checks for file size. If the file is too small or too large, reject the file.
       if (fileSizeKB === 0) {
-        await this.sendErrorEmail(
-          userEmail,
-          'The ZIP file uploaded is empty (0 KB). Please try again!',
-        );
-        return { error: 'The ZIP file is empty (0 KB).' };
+        await this.sendErrorEmail(userEmail, 'The ZIP file is empty (0 KB).');
+        return {
+          success: false,
+          cases: {},
+          error: 'The ZIP file is empty (0 KB).',
+        };
       }
 
       if (fileSizeKB > 300) {
         await this.sendErrorEmail(
           userEmail,
-          'The ZIP file uploaded is too large (more than 300 KB). Please try again!',
+          'The ZIP file is too large (more than 300 KB).',
         );
-        return { error: 'The ZIP file is too large (more than 300 KB).' };
+        return {
+          success: false,
+          cases: {},
+          error: 'The ZIP file is too large (more than 300 KB).',
+        };
       }
 
-      // Check if the file is a valid ZIP file (using the magic number for ZIP files)
       if (!this.isZipFile(buffer)) {
         await this.sendErrorEmail(
           userEmail,
-          'The ZIP file uploaded is not a valid zip file. Please try again!',
+          'The file is not a valid ZIP file.',
         );
-        return { error: 'The file is not a valid ZIP file.' };
+        return {
+          success: false,
+          cases: {},
+          error: 'The file is not a valid ZIP file.',
+        };
       }
 
-      // Attempt to extract the files from the ZIP archive
       const zip = new AdmZip(buffer);
       const zipEntries = zip.getEntries();
       this.logger.log(`Extracted ${zipEntries.length} files from ZIP.`);
 
-      // Array to store all validation errors encountered during ZIP content processing
-      const allErrors: string[] = [];
+      // === VALIDATION CHECKS ===
 
-      // Run various validation checks on the contents of the ZIP file.
-      // Each check ensures that the files inside the ZIP meet certain criteria.
+      const results: Array<{
+        check: string;
+        success: boolean;
+        errors: string[];
+      }> = [];
 
-      // Check for disallowed scripts and plugins
+      // Plugin Check
       const pluginCheck = checkScriptsAndPluginsNotAllowed(zip);
-      if (!pluginCheck.success) {
-        allErrors.push(
-          `Disallowed scripts/plugins found:<br/>${pluginCheck.errors.join('<br/>')}`,
-        );
-      }
+      results.push({
+        check: 'Plugin Check',
+        success: pluginCheck.success,
+        errors: pluginCheck.errors,
+      });
 
-      // Check for invalid or disallowed HTML/CSS rules
+      // HTML/CSS Check
       const htmlCssCheck = checkMapTagAndCssRules(zip);
-      if (!htmlCssCheck.success) {
-        allErrors.push(
-          `Disallowed HTML or CSS rules found:<br/>${htmlCssCheck.errors.join('<br/>')}`,
-        );
-      }
+      results.push({
+        check: 'HTML/CSS Check',
+        success: htmlCssCheck.success,
+        errors: htmlCssCheck.errors,
+      });
 
-      // Check for issues with background styles
+      // Background Style Check
       const bgStyleCheck = checkBackgroundStyles(zip);
-      if (!bgStyleCheck.success) {
-        allErrors.push(
-          `Background styling violations found:<br/>${bgStyleCheck.errors.join('<br/>')}`,
-        );
-      }
+      results.push({
+        check: 'Background Style Check',
+        success: bgStyleCheck.success,
+        errors: bgStyleCheck.errors,
+      });
 
-      // Check if any HTML files contain embedded videos (we require external links to YouTube/Vimeo)
+      // Embedded Video Check
       const htmlEntry = zipEntries.find((entry) =>
         entry.entryName.toLowerCase().endsWith('.html'),
       );
-
       if (htmlEntry) {
         const htmlContent = htmlEntry.getData().toString('utf8');
         const videoCheckResult = checkEmbeddedVideosInHtml(htmlContent);
-        if (!videoCheckResult.success) {
-          allErrors.push(
-            `Embedded video found in HTML. Please use a static preview image linking to an external site (e.g., YouTube or Vimeo).<br/>${videoCheckResult.errors.join('<br/>')}`,
-          );
-        }
+        results.push({
+          check: 'Embedded Video Check',
+          success: videoCheckResult.success,
+          errors: videoCheckResult.errors,
+        });
+      } else {
+        results.push({
+          check: 'Embedded Video Check',
+          success: true, // No HTML found, assume pass
+          errors: [],
+        });
       }
 
-      // Check if the image dimensions match the expected sizes from the HTML content
+      // Image Dimension Check
       const dimensionCheck = checkImageDimensionsMatchHtml(zip);
-      if (!dimensionCheck.success) {
-        allErrors.push(
-          `Image dimension mismatch found:<br/>${dimensionCheck.errors.join('<br/>')}`,
-        );
-      }
+      results.push({
+        check: 'Image Dimension Check',
+        success: dimensionCheck.success,
+        errors: dimensionCheck.errors,
+      });
 
-      // If there are any validation errors, notify the user via email and log the errors
-      if (allErrors.length > 0) {
-        const combinedMessage = allErrors.join('<br/><br/>');
-        await this.sendErrorEmail(userEmail, combinedMessage);
-        const filePath = await this.exportErrorsToFile(userEmail, allErrors);
-
-        // Upload the error log to Supabase storage and generate a signed URL for access
-        const fileBuffer = fs.readFileSync(filePath);
-        const fileName = `${userEmail}.txt`;
-        const uploadPath = `ErrorLogs/${fileName}`;
-
-        const { error: uploadError } = await this.supabase.storage
-          .from(this.bucketName)
-          .upload(uploadPath, fileBuffer, {
-            contentType: 'text/plain',
-            upsert: true,
-          });
-
-        if (uploadError) {
-          this.logger.error(
-            `Failed to upload error log: ${JSON.stringify(uploadError)}`,
-          );
-          return { error: 'Validation failed.', details: allErrors };
-        }
-
-        // Create a signed URL for the uploaded error log to allow the user to download it
-        const { data: signedUrlData, error: signedUrlErr } =
-          await this.supabase.storage
-            .from(this.bucketName)
-            .createSignedUrl(uploadPath, 60 * 60 * 24 * 7); // 1 week validity
-
-        if (signedUrlErr) {
-          this.logger.error(
-            `Failed to create signed URL for error log: ${JSON.stringify(signedUrlErr)}`,
-          );
-          return { error: 'Validation failed.', details: allErrors };
-        }
-
-        // Return the error details along with a link to the error log for user download
-        return {
-          error: 'Validation failed.',
-          details: allErrors,
-          errorLogUrl: signedUrlData.signedUrl,
-        };
-      }
-
-      // If there were no errors, upload the valid files to Supabase and generate signed URLs for them
-      const uploadedFiles = await Promise.all(
-        zipEntries.map(async (entry) => {
-          // Skip directories
-          if (entry.isDirectory) return null;
-
-          const fullPath = entry.entryName;
-          const fileName = fullPath.split('/').pop() || fullPath;
-          const fileExt = fileName.split('.').pop() || 'unknown';
-          const fileBuffer = entry.getData();
-
-          // Skip invalid or empty files
-          if (!fileName || !fileBuffer?.length) {
-            this.logger.warn(`Skipping invalid or empty file: ${fileName}`);
-            return null;
-          }
-
-          // Define upload path in Supabase storage
-          const uploadPath = `extracted/${fileName}`;
-
-          // Upload the extracted file to Supabase storage
-          const { error } = await this.supabase.storage
-            .from(this.bucketName)
-            .upload(uploadPath, fileBuffer, {
-              contentType: 'application/octet-stream',
-              upsert: true,
-            });
-
-          if (error) {
-            this.logger.error(
-              `Failed to upload ${fileName}: ${JSON.stringify(error, null, 2)}`,
-            );
-            return null;
-          }
-
-          // Generate a signed URL for the uploaded file for user access
-          const { data, error: signedUrlError } = await this.supabase.storage
-            .from(this.bucketName)
-            .createSignedUrl(uploadPath, 60 * 60); // 1 hour validity for URL
-
-          if (signedUrlError) {
-            this.logger.error(
-              `Failed to generate signed URL for ${fileName}: ${JSON.stringify(signedUrlError, null, 2)}`,
-            );
-            return null;
-          }
-
-          // Return the file's URL and basic metadata
-          return {
-            FileName: fileName,
-            FileExt: fileExt,
-            Url: data.signedUrl,
-          };
-        }),
-      );
-
-      // Filter out any null values (e.g., invalid files that were skipped)
-      const files = uploadedFiles.filter((file) => file !== null);
-      return { Files: files };
+      return {
+        success: results.every((result) => result.success),
+        results,
+      };
     } catch (error) {
-      // Log any errors that occur during the extraction process
       this.logger.error(`Error extracting ZIP: ${error.message}`);
-      return { error: `ZIP extraction failed: ${error.message}` };
+      return {
+        success: false,
+        results: [],
+        error: `ZIP extraction failed: ${error.message}`,
+      };
     }
   }
-
   /**
    * Sends an error email to the user if validation fails.
    *
@@ -322,34 +230,5 @@ export class ZipExtractService {
   private isZipFile(data: Buffer): boolean {
     const magicNumber = data.slice(0, 2).toString('utf8');
     return magicNumber === 'PK'; // Valid ZIP files begin with "PK"
-  }
-
-  /**
-   * Saves the list of validation errors to a text file and returns the file path.
-   *
-   * @param userEmail - The email address of the user who submitted the ZIP file.
-   * @param errors - A list of validation errors to be saved in the file.
-   * @returns The file path where the errors were saved.
-   */
-  private async exportErrorsToFile(
-    userEmail: string,
-    errors: string[],
-  ): Promise<string> {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = `zip_errors_${timestamp}.txt`;
-    const filePath = path.join(__dirname, '..', '..', 'logs', fileName);
-
-    // Prepare the content of the error report
-    const header = `--- ZIP VALIDATION REPORT ---\n\nUser Email: ${userEmail}\nTimestamp: ${new Date().toLocaleString()}\n\n--- ERRORS ---\n\n`;
-    const content = errors
-      .map((err, i) => `🔴 Issue ${i + 1}:\n${err}\n\n---\n`)
-      .join('');
-
-    // Ensure the log directory exists before writing the error file
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, header + content, 'utf8');
-
-    this.logger.log(`Error log saved at ${filePath}`);
-    return filePath;
   }
 }

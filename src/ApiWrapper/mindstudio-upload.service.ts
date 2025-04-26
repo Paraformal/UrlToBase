@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { MindstudioUploadDto } from './MindStudio-api-Dtos/mindstudio-api-dto';
-import axios from 'axios';
 
 @Injectable()
 export class MindstudioUploadService {
@@ -20,34 +19,41 @@ export class MindstudioUploadService {
         workflow: process.env.WORKFLOW_NAME,
       };
 
-      const response = await axios.post(this.apiUrl, requestBody, {
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        timeout: 300_000, // <<< 120 seconds timeout (2 minutes)
+        body: JSON.stringify(requestBody),
       });
 
-      const data = response.data;
+      if (!response.ok) {
+        throw new Error(
+          `MindStudio API request failed: ${response.statusText}`,
+        );
+      }
 
-      // Continue with your existing parsing logic
-      const result = data?.result;
-      const billingCost = data?.billingCost;
-
-      console.log('Upload result: ', result);
-      console.log('Execution cost: ', billingCost);
+      const data = await response.json();
 
       const finalOutput = this.extractLastValueFromDebugLogs(data);
-      console.log('Extracted final output: ', finalOutput);
 
-      const structuredOutput = this.cleanAndStructureFinalOutput(finalOutput);
-      console.log('Structured final output: ', structuredOutput);
+      if (!finalOutput) {
+        throw new Error('No final output found.');
+      }
+
+      // ❌ Don't use cleanAndStructureFinalOutput()
+      // ✅ Instead, just parse it directly:
+      const parsedOutput = JSON.parse(
+        finalOutput.replace(/^Execution error: Error: API Error: /, '').trim(),
+      );
+
+      console.log('Parsed final output:', parsedOutput);
 
       return {
-        success: true,
-        result,
-        billingCost,
-        structuredOutput,
+        success: parsedOutput.success,
+        cases: parsedOutput.cases,
+        errorLogUrl: parsedOutput.errorLogUrl || null,
       };
     } catch (error) {
       console.error('Mindstudio upload failed: ', error.message);

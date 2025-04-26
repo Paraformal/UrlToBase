@@ -79,8 +79,9 @@ export function checkBackgroundStyles(zip: AdmZip): ValidationResult {
     }
   }
 
+  // Return the check name with success/failure emojis
   return {
     success: errors.length === 0,
-    errors,
+    errors: [`Background Styles Check: ${errors.length === 0 ? '✅' : '❌'}`],
   };
 }
