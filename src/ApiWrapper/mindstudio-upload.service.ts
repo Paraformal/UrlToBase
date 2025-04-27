@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { MindstudioUploadDto } from './MindStudio-api-Dtos/mindstudio-api-dto';
+import axios from 'axios';
 
 @Injectable()
 export class MindstudioUploadService {
   private readonly apiUrl = 'https://api.mindstudio.ai/developer/v2/agents/run';
   private readonly apiKey = process.env.MINDSTUDIO_API_KEY;
+
+  axios = require('axios');
 
   async sendToMindstudio(dto: MindstudioUploadDto) {
     try {
@@ -19,34 +22,38 @@ export class MindstudioUploadService {
         workflow: process.env.WORKFLOW_NAME,
       };
 
-      const response = await fetch(this.apiUrl, {
-        method: 'POST',
+      // Use Axios to make the POST request
+      const response = await axios.post(this.apiUrl, requestBody, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody),
+        timeout: 120000, // Set timeout to 120 seconds (2 minutes)
       });
 
-      if (!response.ok) {
-        throw new Error(
-          `MindStudio API request failed: ${response.statusText}`,
-        );
-      }
+      // Axios automatically parses the response as JSON, so no need for response.json()
+      const data = response.data;
 
-      const data = await response.json();
+      console.log('MindStudio raw response:', JSON.stringify(data, null, 2));
 
       const finalOutput = this.extractLastValueFromDebugLogs(data);
 
       if (!finalOutput) {
-        throw new Error('No final output found.');
+        throw new Error('No final output found inside debug logs.');
       }
 
-      // ❌ Don't use cleanAndStructureFinalOutput()
-      // ✅ Instead, just parse it directly:
-      const parsedOutput = JSON.parse(
-        finalOutput.replace(/^Execution error: Error: API Error: /, '').trim(),
-      );
+      let parsedOutput;
+      try {
+        console.log('Final output:', finalOutput);
+        const jsonString = finalOutput
+          .replace(/^Execution error: Error: API Error:/, '')
+          .trim();
+
+        parsedOutput = JSON.parse(jsonString);
+      } catch (err) {
+        console.error('Failed to parse final output:', finalOutput);
+        throw new Error('Invalid final output JSON.');
+      }
 
       console.log('Parsed final output:', parsedOutput);
 
@@ -56,10 +63,19 @@ export class MindstudioUploadService {
       };
     } catch (error) {
       console.error('Mindstudio upload failed: ', error.message);
-      return {
-        success: false,
-        error: error.message,
-      };
+      if (axios.isAxiosError(error)) {
+        // Handle Axios-specific errors
+        return {
+          success: false,
+          error: error.response ? error.response.data : error.message,
+        };
+      } else {
+        // General error handling
+        return {
+          success: false,
+          error: error.message,
+        };
+      }
     }
   }
 
