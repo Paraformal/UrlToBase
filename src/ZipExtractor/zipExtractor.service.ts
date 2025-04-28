@@ -44,6 +44,7 @@ import { checkEmbeddedVideosInHtml } from '../Utils/checkEmbeddedVideosInHtml';
 import { checkMapTagAndCssRules } from '../Utils/checkMapTagAndCssRules';
 import { checkBackgroundStyles } from '../Utils/checkBackgroundStyles';
 import { checkScriptsAndPluginsNotAllowed } from '../Utils/checkScriptsAndPluginsNotAllowed';
+import { ImageValidationService } from 'src/ImageChecker/ImageValidation.service';
 
 @Injectable()
 export class ZipExtractService {
@@ -54,7 +55,10 @@ export class ZipExtractService {
   );
   private bucketName = process.env.SUPABASE_BUCKET_NAME;
 
-  constructor(private readonly mailerService: MailerService) {}
+  constructor(
+    private readonly mailerService: MailerService,
+    private readonly imageValidationService: ImageValidationService,
+  ) {}
 
   async extractAndUploadZip(base64Zip: string, userEmail: string) {
     try {
@@ -77,6 +81,27 @@ export class ZipExtractService {
           success: false,
           cases: {},
           error: 'The ZIP file is empty (0 KB).',
+        };
+      }
+
+      const zip = new AdmZip(buffer);
+      const zipEntries = zip.getEntries();
+      const htmlFiles = zipEntries.filter(
+        (entry) =>
+          !entry.isDirectory && entry.entryName.toLowerCase().endsWith('.html'),
+      );
+
+      if (htmlFiles.length !== 1) {
+        const errorMessage =
+          htmlFiles.length === 0
+            ? 'No HTML file found inside the ZIP.'
+            : 'Multiple HTML files found inside the ZIP. Only one is allowed.';
+
+        await this.sendErrorEmail(userEmail, errorMessage);
+        return {
+          success: false,
+          cases: {},
+          error: errorMessage,
         };
       }
 
@@ -104,8 +129,6 @@ export class ZipExtractService {
         };
       }
 
-      const zip = new AdmZip(buffer);
-      const zipEntries = zip.getEntries();
       this.logger.log(`Extracted ${zipEntries.length} files from ZIP.`);
 
       // === Perform all validations ===
@@ -167,6 +190,10 @@ export class ZipExtractService {
         errors: dimensionCheck.errors,
       });
 
+      const imageValidationResults =
+        await this.imageValidationService.validateImagesFromZip(zip);
+      results.push(...imageValidationResults);
+
       // If any check failed, return the validation results early
       if (!results.every((result) => result.success)) {
         return {
@@ -174,7 +201,6 @@ export class ZipExtractService {
           results,
         };
       }
-
       // === If all validations pass, continue with upload ===
       const uploadedFiles = await Promise.all(
         zipEntries.map(async (entry) => {
@@ -182,8 +208,14 @@ export class ZipExtractService {
 
           const fullPath = entry.entryName;
           const fileName = fullPath.split('/').pop() || fullPath;
-          const fileExt = fileName.split('.').pop() || 'unknown';
+          const fileExt = fileName.split('.').pop()?.toLowerCase() || 'unknown';
           const fileBuffer = entry.getData();
+
+          // Only allow .html files
+          if (fileExt !== 'html') {
+            this.logger.log(`Skipping non-HTML file: ${fileName}`);
+            return null;
+          }
 
           if (!fileName || !fileBuffer?.length) {
             this.logger.warn(`Skipping invalid or empty file: ${fileName}`);
@@ -195,7 +227,7 @@ export class ZipExtractService {
           const { error } = await this.supabase.storage
             .from(this.bucketName)
             .upload(uploadPath, fileBuffer, {
-              contentType: 'application/octet-stream',
+              contentType: 'text/html',
               upsert: true,
             });
 

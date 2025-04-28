@@ -1,7 +1,7 @@
 import { Controller, Post, Body } from '@nestjs/common';
 import { ImageValidationService } from './ImageValidation.service';
-import { ValidateImageDto } from './ImageValidation_Dto/ImageValidation.dto';
 import { LoggerService } from '../Utils/logger.service';
+import AdmZip from 'adm-zip';
 
 @Controller('api/ntg-ms/image/')
 export class ImageValidationController {
@@ -10,28 +10,28 @@ export class ImageValidationController {
     private readonly logger: LoggerService,
   ) {}
 
-  @Post('validate')
-  async validateImage(@Body() validateImageDto: ValidateImageDto) {
-    if (!validateImageDto.url) {
-      // this.logger.error('Request missing URL.');
-      return { error: 'URL is required' };
+  @Post('validate-zip')
+  async validateZip(@Body() body: { base64Zip: string }) {
+    if (!body.base64Zip) {
+      return { error: 'base64Zip is required' };
     }
 
-    // this.logger.log(
-    //   `Processing request for image URL: ${validateImageDto.url}`,
-    // );
-
     try {
-      const result =
-        await this.imageValidationService.validateImage(validateImageDto);
-      if (result.valid) {
-        return { message: 'Image is valid ✅' };
-      } else {
-        return { error: result.errorMessage };
-      }
+      const buffer = Buffer.from(body.base64Zip, 'base64');
+      const zip = new AdmZip(buffer);
+      const results =
+        await this.imageValidationService.validateImagesFromZip(zip);
+
+      return {
+        success: results.every((r) => r.success),
+        results,
+      };
     } catch (error) {
-      this.logger.error(`Image validation failed: ${error.message}`);
-      return { error: error.message };
+      this.logger.error(`ZIP image validation failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+      };
     }
   }
 }

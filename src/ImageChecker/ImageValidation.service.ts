@@ -1,61 +1,111 @@
 import { Injectable } from '@nestjs/common';
-import axios from 'axios';
-// import * as mime from 'mime-types';
 import * as sharp from 'sharp';
+import AdmZip from 'adm-zip';
 import { LoggerService } from '../Utils/logger.service';
-import { ValidateImageDto } from './ImageValidation_Dto/ImageValidation.dto';
 
 @Injectable()
 export class ImageValidationService {
   constructor(private readonly logger: LoggerService) {}
 
-  async validateImage(
-    createFileDto: ValidateImageDto,
-  ): Promise<{ valid: boolean; errorMessage?: string }> {
+  async validateImagesFromZip(zip: AdmZip): Promise<
+    Array<{
+      check: string;
+      success: boolean;
+      errors: string[];
+    }>
+  > {
+    const results = [];
+
     try {
-      const { url } = createFileDto;
+      const zipEntries = zip.getEntries();
 
-      // this.logger.log(`Received request to validate image: ${url}`);
+      const imageEntries = zipEntries.filter((entry) => {
+        const name = entry.entryName.toLowerCase();
+        return (
+          !entry.isDirectory &&
+          (name.endsWith('.png') ||
+            name.endsWith('.jpg') ||
+            name.endsWith('.jpeg') ||
+            name.endsWith('.gif') ||
+            name.endsWith('.webp'))
+        );
+      });
 
-      // Download the file
-      const response = await axios.get(url, { responseType: 'arraybuffer' });
-
-      if (!response || response.status !== 200) {
-        this.logger.error(`Failed to download image: ${url}`);
-        throw new Error('Image download failed.');
+      if (imageEntries.length === 0) {
+        results.push({
+          check: 'ZIP Content',
+          success: false,
+          errors: ['No images found in the ZIP file ❌'],
+        });
+        return results;
       }
 
-      // Validate image width and DPI
-      await this.checkImageDimensionsAndDPI(response.data);
+      for (const entry of imageEntries) {
+        const errors = [];
+        let success = true;
 
-      return { valid: true };
+        try {
+          const imageBuffer = entry.getData();
+          await this.checkImageDimensionsAndDPI(
+            imageBuffer,
+            entry.entryName,
+            errors,
+          );
+        } catch (error) {
+          success = false;
+          errors.push(error.message);
+        }
+
+        if (errors.length === 0) {
+          errors.push('Image passed all validations ✅');
+        }
+
+        results.push({
+          check: entry.entryName,
+          success,
+          errors,
+        });
+      }
+
+      return results;
     } catch (error) {
-      return { valid: false, errorMessage: error.message };
+      return [
+        {
+          check: 'ZIP Processing',
+          success: false,
+          errors: [error.message],
+        },
+      ];
     }
   }
 
-  private async checkImageDimensionsAndDPI(imageBuffer: Buffer): Promise<void> {
-    try {
-      // Use Sharp to analyze the image
-      const image = sharp(imageBuffer);
-      const metadata = await image.metadata();
+  private async checkImageDimensionsAndDPI(
+    imageBuffer: Buffer,
+    imageName: string,
+    errors: string[],
+  ): Promise<void> {
+    const image = sharp(imageBuffer);
+    const metadata = await image.metadata();
 
-      // Check if the image width exceeds 600 pixels
-      if (metadata.width && metadata.width > 600) {
-        throw new Error('Image width exceeds 600 pixels ❌');
-      }
-
-      // Check if the DPI is 72 (Sharp provides this information in the metadata)
-      if (metadata.density && metadata.density !== 72) {
-        throw new Error('Image DPI is not 72 ❌');
-      }
-
-      this.logger.log(
-        `Image validated: Width is ${metadata.width}px, DPI is ${metadata.density}`,
+    if (metadata.width && metadata.width > 600) {
+      errors.push(
+        `Image width exceeds 600 pixels ❌ (found ${metadata.width}px)`,
       );
-    } catch (error) {
-      this.logger.error(`Image validation failed: ${error.message}`);
-      throw new Error(`Image validation failed: ${error.message}`);
+    }
+
+    if (metadata.density && metadata.density !== 72) {
+      errors.push(`Image DPI is not 72 ❌ (found ${metadata.density})`);
+    }
+
+    if (errors.length === 0) {
+      this.logger.log(
+        `✅ Image validated: ${imageName}, Width: ${metadata.width}px, DPI: ${metadata.density}`,
+      );
+    } else {
+      this.logger.error(
+        `Image validation failed for ${imageName}: ${errors.join(', ')}`,
+      );
+      throw new Error(errors.join(' | '));
     }
   }
 }

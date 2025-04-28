@@ -6,5 +6,6 @@ import { LoggerService } from '../Utils/logger.service';
 @Module({
   controllers: [ImageValidationController],
   providers: [ImageValidationService, LoggerService],
+  exports: [ImageValidationService],
 })
 export class ImageValidationModule {}
