@@ -45,6 +45,7 @@ import { checkMapTagAndCssRules } from '../Utils/checkMapTagAndCssRules';
 import { checkBackgroundStyles } from '../Utils/checkBackgroundStyles';
 import { checkScriptsAndPluginsNotAllowed } from '../Utils/checkScriptsAndPluginsNotAllowed';
 import { ImageValidationService } from 'src/ImageChecker/ImageValidation.service';
+import { runSpecificHtmlValidations } from 'src/Utils/v1_htmlChecks';
 
 @Injectable()
 export class ZipExtractService {
@@ -137,6 +138,9 @@ export class ZipExtractService {
         success: boolean;
         errors: string[];
       }> = [];
+
+      const htmlValidationResults = await runSpecificHtmlValidations(zip);
+      results.push(...htmlValidationResults);
 
       // Plugin Check
       const pluginCheck = checkScriptsAndPluginsNotAllowed(zip);
