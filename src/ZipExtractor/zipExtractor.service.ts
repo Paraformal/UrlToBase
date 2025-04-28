@@ -46,6 +46,7 @@ import { checkBackgroundStyles } from '../Utils/checkBackgroundStyles';
 import { checkScriptsAndPluginsNotAllowed } from '../Utils/checkScriptsAndPluginsNotAllowed';
 import { ImageValidationService } from 'src/ImageChecker/ImageValidation.service';
 import { runSpecificHtmlValidations } from 'src/Utils/v1_htmlChecks';
+import { resizeImagesInZip } from 'src/Utils/resizeImage';
 
 @Injectable()
 export class ZipExtractService {
@@ -73,49 +74,48 @@ export class ZipExtractService {
         return { success: false, cases: {}, error: 'Invalid base64 ZIP file.' };
       }
 
-      const fileSizeKB = Math.round(buffer.byteLength / 1024);
+      let zip = new AdmZip(buffer);
+      let fileSizeKB = Math.round(buffer.byteLength / 1024);
       this.logger.log(`Received file size: ${fileSizeKB} KB`);
 
-      if (fileSizeKB === 0) {
-        await this.sendErrorEmail(userEmail, 'The ZIP file is empty (0 KB).');
-        return {
-          success: false,
-          cases: {},
-          error: 'The ZIP file is empty (0 KB).',
-        };
-      }
-
-      const zip = new AdmZip(buffer);
-      const zipEntries = zip.getEntries();
-      const htmlFiles = zipEntries.filter(
-        (entry) =>
-          !entry.isDirectory && entry.entryName.toLowerCase().endsWith('.html'),
-      );
-
-      if (htmlFiles.length !== 1) {
-        const errorMessage =
-          htmlFiles.length === 0
-            ? 'No HTML file found inside the ZIP.'
-            : 'Multiple HTML files found inside the ZIP. Only one is allowed.';
-
-        await this.sendErrorEmail(userEmail, errorMessage);
-        return {
-          success: false,
-          cases: {},
-          error: errorMessage,
-        };
-      }
-
+      // Special: if >300KB, attempt resizing
       if (fileSizeKB > 300) {
-        await this.sendErrorEmail(
-          userEmail,
-          'The ZIP file is too large (more than 300 KB).',
+        this.logger.log(`File size > 300KB. Attempting image resizing...`);
+        const resizeResult = await resizeImagesInZip(zip); // <-- Call your utility here
+
+        if (!resizeResult.success) {
+          await this.sendErrorEmail(
+            userEmail,
+            `Failed to resize images: ${resizeResult.error}`,
+          );
+          return {
+            success: false,
+            cases: {},
+            error: `Failed to resize images: ${resizeResult.error}`,
+          };
+        }
+
+        zip = resizeResult.resizedZip!; // use resized zip
+        this.logger.log(
+          `Image resizing successful. Continuing with resized ZIP.`,
         );
-        return {
-          success: false,
-          cases: {},
-          error: 'The ZIP file is too large (more than 300 KB).',
-        };
+
+        // Update the buffer and filesize after resizing
+        buffer = zip.toBuffer();
+        fileSizeKB = Math.round(buffer.byteLength / 1024);
+        this.logger.log(`Resized ZIP file size: ${fileSizeKB} KB`);
+
+        if (fileSizeKB > 300) {
+          await this.sendErrorEmail(
+            userEmail,
+            'ZIP file is still too large after resizing.',
+          );
+          return {
+            success: false,
+            cases: {},
+            error: 'ZIP file is still too large after resizing.',
+          };
+        }
       }
 
       if (!this.isZipFile(buffer)) {
@@ -129,7 +129,7 @@ export class ZipExtractService {
           error: 'The file is not a valid ZIP file.',
         };
       }
-
+      const zipEntries = zip.getEntries();
       this.logger.log(`Extracted ${zipEntries.length} files from ZIP.`);
 
       // === Perform all validations ===
