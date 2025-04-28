@@ -130,6 +130,25 @@ export class ZipExtractService {
         };
       }
       const zipEntries = zip.getEntries();
+      const htmlFiles = zipEntries.filter(
+        (entry) =>
+          !entry.isDirectory && entry.entryName.toLowerCase().endsWith('.html'),
+      );
+
+      if (htmlFiles.length !== 1) {
+        const errorMessage =
+          htmlFiles.length === 0
+            ? 'No HTML file found inside the ZIP.'
+            : 'Multiple HTML files found inside the ZIP. Only one is allowed.';
+
+        await this.sendErrorEmail(userEmail, errorMessage);
+        return {
+          success: false,
+          cases: {},
+          error: errorMessage,
+        };
+      }
+
       this.logger.log(`Extracted ${zipEntries.length} files from ZIP.`);
 
       // === Perform all validations ===
