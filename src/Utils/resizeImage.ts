@@ -11,8 +11,9 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
   console.log('[resizeImagesInZip] Called.');
 
   const MAX_ZIP_SIZE = 300 * 1024; // 300 KB
+  const MAX_WIDTH = 600; // Maximum image width (600px)
   const newZip = new AdmZip();
-  let htmlEntry: AdmZip.IZipEntry | null = null;
+  const htmlEntries: AdmZip.IZipEntry[] = [];
   const images: { entry: AdmZip.IZipEntry; data: Buffer }[] = [];
 
   try {
@@ -22,7 +23,7 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
 
       const lowerName = entry.entryName.toLowerCase();
       if (lowerName.endsWith('.html')) {
-        htmlEntry = entry;
+        htmlEntries.push(entry); // Store all HTML files in an array
       } else if (
         lowerName.endsWith('.png') ||
         lowerName.endsWith('.jpg') ||
@@ -32,16 +33,28 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
       ) {
         images.push({ entry, data: entry.getData() });
       } else {
-        newZip.addFile(entry.entryName, entry.getData()); // copy other files
+        newZip.addFile(entry.entryName, entry.getData()); // Copy other files
       }
     }
 
-    if (!htmlEntry) {
+    // Check if there is more than one HTML file
+    if (htmlEntries.length > 1) {
+      console.error(
+        '[resizeImagesInZip] More than one HTML file found in the ZIP.',
+      );
+      return {
+        success: false,
+        error: 'More than one HTML file found in the ZIP.',
+      };
+    }
+
+    // If no HTML file found, return an error
+    if (htmlEntries.length === 0) {
       console.error('[resizeImagesInZip] No HTML file found in the ZIP.');
       return { success: false, error: 'No HTML file found in the ZIP.' };
     }
 
-    const htmlContent = htmlEntry.getData().toString('utf8');
+    const htmlContent = htmlEntries[0].getData().toString('utf8');
 
     // 2. Prepare images for resizing
     let quality = 80; // Start quality
@@ -54,7 +67,10 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
       for (const img of currentImages) {
         tempZip.addFile(img.entry.entryName, img.data);
       }
-      tempZip.addFile(htmlEntry!.entryName, Buffer.from(htmlContent, 'utf8'));
+      tempZip.addFile(
+        htmlEntries[0].entryName,
+        Buffer.from(htmlContent, 'utf8'),
+      );
       return tempZip;
     }
 
@@ -110,7 +126,11 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
         let newImage = image;
 
         if (metadata.width && metadata.height) {
-          const newWidth = Math.floor(metadata.width * widthReductionFactor);
+          // Enforce the max width to be 600px
+          const newWidth = Math.min(
+            Math.floor(metadata.width * widthReductionFactor),
+            MAX_WIDTH,
+          );
           console.log(
             `[resizeImagesInZip] Resizing ${entry.entryName} from ${metadata.width} to ${newWidth} width.`,
           );
