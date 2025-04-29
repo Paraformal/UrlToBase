@@ -89,6 +89,7 @@ export function checkMapTagAndCssRules(
         htmlContent.split('\n').forEach((line, index) => {
           const lineNum = index + 1;
 
+          // Check for <map> tag
           if (/<\s*map[^>]*>/i.test(line)) {
             console.log(
               `Found <map> tag in ${entry.entryName} line ${lineNum}`,
@@ -98,21 +99,25 @@ export function checkMapTagAndCssRules(
             );
           }
 
-          if (/float\s*:/i.test(line)) {
+          // Check for float: left; and float: right;
+          if (/float\s*:\s*(left|right)\s*;/i.test(line)) {
             console.log(
-              `Found CSS float in ${entry.entryName} line ${lineNum}`,
+              `Found CSS float (left or right) in ${entry.entryName} line ${lineNum}`,
             );
             errors.push(
-              `CSS float property used in ${entry.entryName} (line ${lineNum})`,
+              `CSS float property (left or right) used in ${entry.entryName} (line ${lineNum})`,
             );
           }
 
-          if (/position\s*:/i.test(line)) {
+          // Check for position: absolute; position: relative; position: fixed; position: sticky;
+          if (
+            /position\s*:\s*(absolute|relative|fixed|sticky)\s*;/i.test(line)
+          ) {
             console.log(
-              `Found CSS position in ${entry.entryName} line ${lineNum}`,
+              `Found CSS position (absolute, relative, fixed, sticky) in ${entry.entryName} line ${lineNum}`,
             );
             errors.push(
-              `CSS position property used in ${entry.entryName} (line ${lineNum})`,
+              `CSS position property (absolute, relative, fixed, sticky) used in ${entry.entryName} (line ${lineNum})`,
             );
           }
         });

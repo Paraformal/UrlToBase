@@ -39,10 +39,10 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
             html,
           );
         if (hasExternalCSS) {
-          errors.push('Ext_Css_Pass ✅');
-        } else {
-          errors.push('Ext_Css_Fail ❌');
+          errors.push('Ext_Css_Fail ❌'); // Fail if external CSS is used
           success = false;
+        } else {
+          errors.push('Ext_Css_Pass ✅'); // Pass if no external CSS
         }
 
         // 2. Hardcoded URL check
