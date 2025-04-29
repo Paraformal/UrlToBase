@@ -47,6 +47,7 @@ import { checkScriptsAndPluginsNotAllowed } from '../Utils/checkScriptsAndPlugin
 import { ImageValidationService } from 'src/ImageChecker/ImageValidation.service';
 import { runSpecificHtmlValidations } from 'src/Utils/v1_htmlChecks';
 import { resizeImagesInZip } from 'src/Utils/resizeImage';
+import { inlineExternalCssInZip } from 'src/Utils/inlineExternalCssInZip';
 
 @Injectable()
 export class ZipExtractService {
@@ -151,12 +152,30 @@ export class ZipExtractService {
 
       this.logger.log(`Extracted ${zipEntries.length} files from ZIP.`);
 
+      // Call the inlineExternalCssInZip function and store the result
+      const cssInliningResult = inlineExternalCssInZip(zip);
+
+      // Log the result of the CSS inlining operation
+      this.logger.log(
+        `CSS inlining result: ${cssInliningResult.success ? '✅ Success' : '❌ Failed'}`,
+      );
+      if (cssInliningResult.errors.length > 0) {
+        this.logger.error('CSS inlining errors:', cssInliningResult.errors);
+      }
+
       // === Perform all validations ===
       const results: Array<{
         check: string;
         success: boolean;
         errors: string[];
       }> = [];
+
+      // Push the CSS inlining result into the results array
+      results.push({
+        check: 'Inline External CSS Check',
+        success: cssInliningResult.success,
+        errors: cssInliningResult.errors,
+      });
 
       const htmlValidationResults = await runSpecificHtmlValidations(zip);
       results.push(...htmlValidationResults);
@@ -170,7 +189,7 @@ export class ZipExtractService {
       });
 
       // HTML/CSS Check
-      const htmlCssCheck = checkMapTagAndCssRules(zip);
+      const htmlCssCheck = checkMapTagAndCssRules(zip, true);
       results.push({
         check: 'HTML/CSS Check',
         success: htmlCssCheck.success,
