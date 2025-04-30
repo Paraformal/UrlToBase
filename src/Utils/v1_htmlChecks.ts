@@ -5,13 +5,13 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
     check: string;
     success: boolean;
     errors: string[];
+    details: string[] | null;
   }>
 > {
   const results = [];
 
   try {
     const zipEntries = zip.getEntries();
-
     const htmlEntries = zipEntries.filter(
       (entry) =>
         !entry.isDirectory && entry.entryName.toLowerCase().endsWith('.html'),
@@ -22,36 +22,59 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
         check: 'ZIP Content',
         success: false,
         errors: ['No HTML files found in the ZIP ❌'],
+        details: ['Ensure at least one .html file is present.'],
       });
       return results;
     }
 
     for (const entry of htmlEntries) {
       const errors = [];
+      const details = [];
       let success = true;
+      let hasCSSIssues = false; // Combined CSS flag
 
       try {
         const html = entry.getData().toString('utf8');
 
-        // 1. External CSS check
-        const hasExternalCSS =
-          /<link[^>]*rel=["']stylesheet["'][^>]*href=["'][^"']+["']/i.test(
-            html,
-          );
-        if (hasExternalCSS) {
-          errors.push('Ext_Css_Fail ❌'); // Fail if external CSS is used
+        // ========== CSS VALIDATION ==========
+        const linkTags = html.match(/<link\b[^>]*>/gi) || [];
+        linkTags.forEach((tag) => {
+          const isStylesheet =
+            tag.toLowerCase().includes('rel="stylesheet"') ||
+            tag.toLowerCase().includes("rel='stylesheet'");
+          const hrefMatch = tag.match(/href=(["'])(.*?)\1/i);
+
+          if (isStylesheet && hrefMatch) {
+            const href = hrefMatch[2].trim();
+
+            // External CSS check
+            if (href.startsWith('http://') || href.startsWith('https://')) {
+              hasCSSIssues = true;
+              details.push(`External CSS: ${tag.trim()}`);
+            }
+            // Local path validation
+            else if (!/^[a-zA-Z0-9_\-./]+\.css$/.test(href)) {
+              hasCSSIssues = true;
+              details.push(`Invalid CSS path: "${href}"`);
+            }
+          }
+        });
+
+        // CSS check result
+        if (hasCSSIssues) {
+          errors.push('Ext_Css_Fail ❌');
           success = false;
         } else {
-          errors.push('Ext_Css_Pass ✅'); // Pass if no external CSS
+          errors.push('Ext_Css_Pass ✅');
         }
 
-        // 2. Hardcoded URL check
+        // ========== URL VALIDATION ========== (ORIGINAL CODE PRESERVED)
         const urlRegex = /href\s*=\s*["']([^"']+)["']/gi;
-        let match;
+        let urlMatch;
         let hardUrlPass = true;
 
-        while ((match = urlRegex.exec(html)) !== null) {
-          const url = match[1];
+        while ((urlMatch = urlRegex.exec(html)) !== null) {
+          const url = urlMatch[1];
           if (
             !url.startsWith('http://') &&
             !url.startsWith('https://') &&
@@ -60,6 +83,7 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
             !url.startsWith('#')
           ) {
             hardUrlPass = false;
+            details.push(`Hardcoded/relative URL: "${url}"`);
             break;
           }
         }
@@ -71,15 +95,18 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
           success = false;
         }
 
-        // 3. URL length check
+        // ========== URL LENGTH CHECK ========== (ORIGINAL CODE PRESERVED)
         const urlLengthRegex = /https?:\/\/[^\s"'<>]+/gi;
         let longUrlFound = false;
-        let urlMatch;
+        let lengthMatch;
 
-        while ((urlMatch = urlLengthRegex.exec(html)) !== null) {
-          const url = urlMatch[0];
+        while ((lengthMatch = urlLengthRegex.exec(html)) !== null) {
+          const url = lengthMatch[0];
           if (url.length > 1024) {
             longUrlFound = true;
+            details.push(
+              `Long URL (${url.length} chars): ${url.slice(0, 100)}...`,
+            );
             break;
           }
         }
@@ -91,7 +118,7 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
           success = false;
         }
 
-        // 4. Width check
+        // ========== WIDTH CHECK ========== (ORIGINAL CODE PRESERVED)
         const widthRegex = /(width\s*=\s*["']?(\d+)(px)?["'])/gi;
         let widthFail = false;
         let widthMatch;
@@ -100,6 +127,7 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
           const widthValue = parseInt(widthMatch[2]);
           if (widthValue > 600) {
             widthFail = true;
+            details.push(`Width >600px: ${widthMatch[0]}`);
             break;
           }
         }
@@ -112,13 +140,15 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
         }
       } catch (error) {
         success = false;
-        errors.push(`Error parsing HTML: ${error.message}`);
+        errors.push(`HTML parsing error: ${error.message}`);
+        details.push(error.stack || 'No stack trace available');
       }
 
       results.push({
         check: entry.entryName,
         success,
         errors,
+        details: success ? null : details,
       });
     }
 
@@ -129,6 +159,7 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
         check: 'ZIP Processing',
         success: false,
         errors: [error.message],
+        details: [error.stack || 'No stack trace available'],
       },
     ];
   }
