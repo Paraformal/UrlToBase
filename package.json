@@ -34,6 +34,8 @@
     "jsdom": "^26.1.0",
     "mime-types": "^3.0.1",
     "mindstudio": "^0.9.6",
+    "node-fetch": "^2.7.0",
+    "node-html-parser": "^7.0.1",
     "nodemailer": "^6.10.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",

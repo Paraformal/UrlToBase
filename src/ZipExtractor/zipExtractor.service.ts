@@ -153,7 +153,7 @@ export class ZipExtractService {
       this.logger.log(`Extracted ${zipEntries.length} files from ZIP.`);
 
       // Call the inlineExternalCssInZip function and store the result
-      const cssInliningResult = inlineExternalCssInZip(zip);
+      const cssInliningResult = await inlineExternalCssInZip(zip);
 
       // Log the result of the CSS inlining operation
       this.logger.log(

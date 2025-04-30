@@ -1,20 +1,28 @@
 import * as AdmZip from 'adm-zip';
 import { parse } from 'node-html-parser';
+import fetch from 'node-fetch'; // Added for URL support
 
 /**
- * Replaces external CSS links with embedded <style> blocks in HTML files.
- * Returns the updated zip for downstream checks, along with the status response.
+ * Replaces external CSS links (both local and remote) with embedded <style> blocks.
+ * Returns the updated zip with status report.
  */
-export function inlineExternalCssInZip(zip: AdmZip): {
+export async function inlineExternalCssInZip(zip: AdmZip): Promise<{
+  // Changed to async
   check: string;
   success: boolean;
   errors: string[];
-} {
+}> {
   const cssFiles: Record<string, string> = {};
   const errors: string[] = [];
+  let modified = false;
 
-  // Step 1: Collect all CSS file contents
-  console.log('Collecting CSS files...');
+  // Helper functions
+  const isUrl = (href: string) =>
+    href.startsWith('http://') || href.startsWith('https://');
+  const normalizePath = (str: string) =>
+    str.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+  // Step 1: Collect local CSS files (original logic)
   zip.getEntries().forEach((entry) => {
     if (!entry.isDirectory) {
       const fileName = entry.entryName.toLowerCase();
@@ -23,58 +31,66 @@ export function inlineExternalCssInZip(zip: AdmZip): {
         if (isValidCss(cssContent)) {
           cssFiles[entry.entryName] = cssContent;
           console.log(`Found valid CSS file: ${entry.entryName}`);
-        } else {
-          console.log(
-            `Skipping non-CSS file (invalid CSS content): ${entry.entryName}`,
-          );
         }
       }
     }
   });
 
-  if (Object.keys(cssFiles).length === 0) {
-    errors.push('No valid CSS files found in the ZIP.');
-    console.log('No valid CSS files found in the ZIP.');
-  } else {
-    console.log(`Found ${Object.keys(cssFiles).length} valid CSS files.`);
-  }
-
-  // Step 2: Process each HTML file
-  console.log('Processing HTML files...');
-  let modified = false;
-
-  zip.getEntries().forEach((entry) => {
+  // Step 2: Process HTML files with async support
+  for (const entry of zip.getEntries()) {
+    // Changed to for..of for async
     if (!entry.isDirectory && entry.entryName.toLowerCase().endsWith('.html')) {
       console.log(`Processing HTML file: ${entry.entryName}`);
-
       const originalHtml = entry.getData().toString('utf8');
       const root = parse(originalHtml);
 
-      root.querySelectorAll('link[rel="stylesheet"]').forEach((linkTag) => {
+      const links = root.querySelectorAll('link[rel="stylesheet"]');
+      for (const linkTag of links) {
+        // Changed to for..of for async
         const href = linkTag.getAttribute('href')?.trim();
-        if (href) {
-          const resolvedPath = resolveFilePath(href, cssFiles);
-          if (resolvedPath && cssFiles[resolvedPath]) {
-            console.log(`Found CSS link to replace: ${href}`);
-            const styleTag = `<style>\n${cssFiles[resolvedPath]}\n</style>`;
-            linkTag.replaceWith(styleTag);
-            modified = true;
+        if (!href) continue;
+
+        try {
+          let cssContent: string;
+
+          if (isUrl(href)) {
+            // Handle external URL
+            console.log(`Fetching remote CSS: ${href}`);
+            const response = await fetch(href);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            cssContent = await response.text();
+
+            if (!isValidCss(cssContent)) {
+              throw new Error('Returned content is not valid CSS');
+            }
           } else {
-            console.log(`CSS file not found for ${href}.`);
-            errors.push(`CSS file not found for ${href}.`);
+            // Handle local file
+            const resolvedPath = Object.keys(cssFiles).find(
+              (path) =>
+                normalizePath(path) === normalizePath(href) ||
+                path.endsWith(href),
+            );
+
+            if (!resolvedPath || !cssFiles[resolvedPath]) {
+              throw new Error('Local CSS file not found');
+            }
+            cssContent = cssFiles[resolvedPath];
           }
+
+          linkTag.replaceWith(`<style>\n${cssContent}\n</style>`);
+          modified = true;
+        } catch (error) {
+          errors.push(`CSS loading failed for ${href}: ${error.message}`);
+          console.error(`Error processing ${href}:`, error.message);
         }
-      });
+      }
 
       if (modified) {
-        console.log(`Updated HTML file: ${entry.entryName}`);
-        const updatedHtml = root.toString();
-        zip.updateFile(entry.entryName, Buffer.from(updatedHtml, 'utf8'));
+        zip.updateFile(entry.entryName, Buffer.from(root.toString(), 'utf8'));
+        modified = false; // Reset for next file
       }
     }
-  });
-
-  console.log('Finished processing ZIP file.');
+  }
 
   return {
     check: 'Inline External CSS Check',
@@ -82,45 +98,14 @@ export function inlineExternalCssInZip(zip: AdmZip): {
     errors:
       errors.length > 0
         ? errors
-        : ['CSS inlining: ✅ All external CSS files successfully inlined.'],
+        : ['✅ All CSS (local and remote) successfully inlined.'],
   };
 }
 
-/**
- * Check if the content of a file contains valid CSS.
- */
+// Keep existing validation and resolution helpers
 function isValidCss(content: string): boolean {
   const cssPattern = /[\{\}\:;]\s*[\w\-]+\s*[\{\}\:;]/;
   return cssPattern.test(content);
 }
 
-/**
- * Tries to resolve the CSS file path with fallback matching.
- */
-function resolveFilePath(
-  href: string,
-  cssFiles: Record<string, string>,
-): string | null {
-  // Direct match
-  if (cssFiles[href]) {
-    return href;
-  }
-
-  // Normalize helper
-  const normalize = (str: string) =>
-    str.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-
-  const normalizedHref = normalize(href);
-
-  // Try fuzzy matching based on normalized names
-  for (const path in cssFiles) {
-    if (
-      normalize(path).includes(normalizedHref) ||
-      normalize(path).endsWith(normalizedHref)
-    ) {
-      return path;
-    }
-  }
-
-  return null;
-}
+// Optional: Add timeout wrapper for fetch if needed
