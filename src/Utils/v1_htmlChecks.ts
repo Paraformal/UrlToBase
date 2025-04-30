@@ -37,7 +37,7 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
         const html = entry.getData().toString('utf8');
 
         // ========== CSS VALIDATION ==========
-        const linkTags = html.match(/<link\b[^>]*>/gi) || [];
+        const linkTags = (html.match(/<link\b[^>]*>/gi) || []) as string[];
         linkTags.forEach((tag) => {
           const isStylesheet =
             tag.toLowerCase().includes('rel="stylesheet"') ||
