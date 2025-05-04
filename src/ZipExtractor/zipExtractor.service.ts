@@ -79,11 +79,9 @@ export class ZipExtractService {
       let fileSizeKB = Math.round(buffer.byteLength / 1024);
       this.logger.log(`Received file size: ${fileSizeKB} KB`);
 
-      // Special: if >300KB, attempt resizing
       if (fileSizeKB > 300) {
         this.logger.log(`File size > 300KB. Attempting image resizing...`);
-        const resizeResult = await resizeImagesInZip(zip); // <-- Call your utility here
-
+        const resizeResult = await resizeImagesInZip(zip);
         if (!resizeResult.success) {
           await this.sendErrorEmail(
             userEmail,
@@ -96,12 +94,7 @@ export class ZipExtractService {
           };
         }
 
-        zip = resizeResult.resizedZip!; // use resized zip
-        this.logger.log(
-          `Image resizing successful. Continuing with resized ZIP.`,
-        );
-
-        // Update the buffer and filesize after resizing
+        zip = resizeResult.resizedZip!;
         buffer = zip.toBuffer();
         fileSizeKB = Math.round(buffer.byteLength / 1024);
         this.logger.log(`Resized ZIP file size: ${fileSizeKB} KB`);
@@ -130,6 +123,7 @@ export class ZipExtractService {
           error: 'The file is not a valid ZIP file.',
         };
       }
+
       const zipEntries = zip.getEntries();
       const htmlFiles = zipEntries.filter(
         (entry) =>
@@ -152,10 +146,7 @@ export class ZipExtractService {
 
       this.logger.log(`Extracted ${zipEntries.length} files from ZIP.`);
 
-      // Call the inlineExternalCssInZip function and store the result
       const cssInliningResult = await inlineExternalCssInZip(zip);
-
-      // Log the result of the CSS inlining operation
       this.logger.log(
         `CSS inlining result: ${cssInliningResult.success ? '✅ Success' : '❌ Failed'}`,
       );
@@ -163,14 +154,12 @@ export class ZipExtractService {
         this.logger.error('CSS inlining errors:', cssInliningResult.errors);
       }
 
-      // === Perform all validations ===
       const results: Array<{
         check: string;
         success: boolean;
         errors: string[];
       }> = [];
 
-      // Push the CSS inlining result into the results array
       results.push({
         check: 'Inline External CSS Check',
         success: cssInliningResult.success,
@@ -180,7 +169,6 @@ export class ZipExtractService {
       const htmlValidationResults = await runSpecificHtmlValidations(zip);
       results.push(...htmlValidationResults);
 
-      // Plugin Check
       const pluginCheck = checkScriptsAndPluginsNotAllowed(zip);
       results.push({
         check: 'Plugin Check',
@@ -188,7 +176,6 @@ export class ZipExtractService {
         errors: pluginCheck.errors,
       });
 
-      // HTML/CSS Check
       const htmlCssCheck = checkMapTagAndCssRules(zip, true);
       results.push({
         check: 'HTML/CSS Check',
@@ -196,7 +183,6 @@ export class ZipExtractService {
         errors: htmlCssCheck.errors,
       });
 
-      // Background Style Check
       const bgStyleCheck = checkBackgroundStyles(zip);
       results.push({
         check: 'Background Style Check',
@@ -204,7 +190,6 @@ export class ZipExtractService {
         errors: bgStyleCheck.errors,
       });
 
-      // Embedded Video Check
       const htmlEntry = zipEntries.find((entry) =>
         entry.entryName.toLowerCase().endsWith('.html'),
       );
@@ -219,12 +204,11 @@ export class ZipExtractService {
       } else {
         results.push({
           check: 'Embedded Video Check',
-          success: true, // No HTML found, assume pass
+          success: true,
           errors: [],
         });
       }
 
-      // Image Dimension Check
       const dimensionCheck = checkImageDimensionsMatchHtml(zip);
       results.push({
         check: 'Image Dimension Check',
@@ -236,75 +220,10 @@ export class ZipExtractService {
         await this.imageValidationService.validateImagesFromZip(zip);
       results.push(...imageValidationResults);
 
-      // If any check failed, return the validation results early
-      if (!results.every((result) => result.success)) {
-        return {
-          success: false,
-          results,
-        };
-      }
-      // === If all validations pass, continue with upload ===
-      const uploadedFiles = await Promise.all(
-        zipEntries.map(async (entry) => {
-          if (entry.isDirectory) return null;
-
-          const fullPath = entry.entryName;
-          const fileName = fullPath.split('/').pop() || fullPath;
-          const fileExt = fileName.split('.').pop()?.toLowerCase() || 'unknown';
-          const fileBuffer = entry.getData();
-
-          // Only allow .html files
-          if (fileExt !== 'html') {
-            this.logger.log(`Skipping non-HTML file: ${fileName}`);
-            return null;
-          }
-
-          if (!fileName || !fileBuffer?.length) {
-            this.logger.warn(`Skipping invalid or empty file: ${fileName}`);
-            return null;
-          }
-
-          const uploadPath = `extracted/${fileName}`;
-
-          const { error } = await this.supabase.storage
-            .from(this.bucketName)
-            .upload(uploadPath, fileBuffer, {
-              contentType: 'text/html',
-              upsert: true,
-            });
-
-          if (error) {
-            this.logger.error(
-              `Failed to upload ${fileName}: ${JSON.stringify(error, null, 2)}`,
-            );
-            return null;
-          }
-
-          const { data, error: signedUrlError } = await this.supabase.storage
-            .from(this.bucketName)
-            .createSignedUrl(uploadPath, 60 * 60); // 1 hour
-
-          if (signedUrlError) {
-            this.logger.error(
-              `Failed to generate signed URL for ${fileName}: ${JSON.stringify(
-                signedUrlError,
-                null,
-                2,
-              )}`,
-            );
-            return null;
-          }
-
-          return {
-            FileName: fileName,
-            FileExt: fileExt,
-            Url: data.signedUrl,
-          };
-        }),
-      );
-
-      const files = uploadedFiles.filter((file) => file !== null);
-      return { Files: files };
+      return {
+        success: results.every((r) => r.success),
+        results,
+      };
     } catch (error) {
       this.logger.error(`Error extracting ZIP: ${error.message}`);
       return { error: `ZIP extraction failed: ${error.message}` };
