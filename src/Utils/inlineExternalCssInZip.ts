@@ -127,6 +127,7 @@ export async function inlineExternalCssInZip(zip: AdmZip): Promise<{
   const cssFiles: Record<string, string> = {};
   const errors: string[] = [];
   let modified = false;
+  let totalCssLinkTags = 0;
 
   // Existing CSS collection logic
   zip.getEntries().forEach((entry) => {
@@ -149,6 +150,7 @@ export async function inlineExternalCssInZip(zip: AdmZip): Promise<{
       const root = parse(originalHtml);
 
       const links = root.querySelectorAll('link[rel="stylesheet"]');
+      totalCssLinkTags += links.length;
       for (const linkTag of links) {
         const href = linkTag.getAttribute('href')?.trim();
         if (!href) continue;
@@ -177,6 +179,14 @@ export async function inlineExternalCssInZip(zip: AdmZip): Promise<{
         modified = false;
       }
     }
+  }
+
+  if (Object.keys(cssFiles).length === 0 && totalCssLinkTags === 0) {
+    return {
+      check: 'Inline External CSS Check',
+      success: true,
+      errors: ['✅ No CSS found or referenced. Nothing to inline.'],
+    };
   }
 
   // Add Supabase upload only if no errors
