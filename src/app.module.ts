@@ -6,7 +6,12 @@ import { ZipExtractModule } from './ZipExtractor/zipExtractor.module';
 import { MindstudioUploadModule } from './ApiWrapper/mindstudio-upload.module';
 
 @Module({
-  imports: [MailerModule, ImageValidationModule, ZipExtractModule],
+  imports: [
+    MailerModule,
+    ImageValidationModule,
+    ZipExtractModule,
+    MindstudioUploadModule,
+  ],
   providers: [LoggerService],
 })
 export class AppModule {}

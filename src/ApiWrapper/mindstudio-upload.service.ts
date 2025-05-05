@@ -5,72 +5,128 @@ import axios from 'axios';
 @Injectable()
 export class MindstudioUploadService {
   private readonly apiUrl = 'https://api.mindstudio.ai/developer/v2/agents/run';
-  private readonly apiKey = process.env.MINDSTUDIO_API_KEY;
-
+  private readonly apiKey =
+    'skuVkbPAbpZe68oskY0QseGcQSQC6OSUS2SyGqkEQQow2wSks8yywaqwGagYQa6GgiECMws8iQkAgkoqiUgOCA20';
   axios = require('axios');
 
   async sendToMindstudio(dto: MindstudioUploadDto) {
     try {
       const { email, attachment } = dto;
 
+      console.log('[MindstudioUploadService] Starting sendToMindstudio');
+      console.log('[MindstudioUploadService] API Key Loaded:', !!this.apiKey);
+      console.log('[MindstudioUploadService] API URL:', this.apiUrl);
+      console.log('[MindstudioUploadService] Input DTO:', {
+        email,
+        attachment,
+      });
+      console.log(
+        '[MindstudioUploadService] WORKER_ID:',
+        process.env.WORKER_ID,
+      );
+
       const requestBody = {
-        appId: process.env.WORKER_ID,
+        appId: '46dcfa1a-c38c-40bf-a9df-70b6e03376ae',
         variables: {
           from: email,
           attachments: attachment,
         },
-        workflow: process.env.WORKFLOW_NAME,
+        workflow: 'MVP_Test.flow',
       };
 
-      // Use Axios to make the POST request
+      console.log('[MindstudioUploadService] Request Body:', requestBody);
+
       const response = await axios.post(this.apiUrl, requestBody, {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        timeout: 120000, // Set timeout to 120 seconds (2 minutes)
+        timeout: 120000,
       });
 
-      // Axios automatically parses the response as JSON, so no need for response.json()
-      const data = response.data;
+      console.log('[MindstudioUploadService] Raw response received');
 
-      console.log('MindStudio raw response:', JSON.stringify(data, null, 2));
+      const data = response.data;
+      console.log(
+        '[MindstudioUploadService] Response Data:',
+        JSON.stringify(data, null, 2),
+      );
 
       const finalOutput = this.extractLastValueFromDebugLogs(data);
 
       if (!finalOutput) {
+        console.error(
+          '[MindstudioUploadService] ❌ No final output found in debug logs',
+        );
         throw new Error('No final output found inside debug logs.');
       }
 
+      console.log('[MindstudioUploadService] Final Output:', finalOutput);
+
       let parsedOutput;
       try {
-        console.log('Final output:', finalOutput);
-        const jsonString = finalOutput
+        const cleanedOutput = finalOutput
           .replace(/^Execution error: Error: API Error:/, '')
           .trim();
 
-        parsedOutput = JSON.parse(jsonString);
+        // Inside sendToMindstudio after parsing the cleanedOutput
+        if (this.isJsonString(cleanedOutput)) {
+          parsedOutput = JSON.parse(cleanedOutput);
+
+          console.log(
+            '[MindstudioUploadService] ✅ Parsed Final Output:',
+            parsedOutput,
+          );
+
+          return {
+            success: parsedOutput.success ?? true,
+            results:
+              parsedOutput.results ??
+              parsedOutput.value ??
+              parsedOutput ??
+              null, // fallback to parsedOutput itself
+          };
+        } else {
+          // 🔥 New behavior here
+          console.error(
+            '[MindstudioUploadService] ❌ Final output is not JSON. Returning error string instead.',
+            cleanedOutput,
+          );
+          return {
+            success: false,
+            error: cleanedOutput,
+          };
+        }
       } catch (err) {
-        console.error('Failed to parse final output:', finalOutput);
-        throw new Error('Invalid final output JSON.');
+        console.error(
+          '[MindstudioUploadService] ❌ Error while handling final output:',
+          err.message,
+        );
+        return {
+          success: false,
+          error: err.message,
+        };
       }
-
-      console.log('Parsed final output:', parsedOutput);
-
-      return {
-        success: parsedOutput.success,
-        results: parsedOutput.results,
-      };
     } catch (error) {
-      console.error('Mindstudio upload failed: ', error.message);
+      console.error(
+        '[MindstudioUploadService] ❌ Error in sendToMindstudio:',
+        error,
+      );
+
       if (axios.isAxiosError(error)) {
-        // Handle Axios-specific errors
+        console.error(
+          '[MindstudioUploadService] Axios Error Response:',
+          error.response?.data,
+        );
         return {
           success: false,
           error: error.response ? error.response.data : error.message,
         };
       } else {
-        // General error handling
+        console.error(
+          '[MindstudioUploadService] General Error:',
+          error.message,
+        );
         return {
           success: false,
           error: error.message,
@@ -79,8 +135,19 @@ export class MindstudioUploadService {
     }
   }
 
+  private isJsonString(str: string): boolean {
+    try {
+      JSON.parse(str);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
   private extractLastValueFromDebugLogs(json: any): string | null {
     if (!json || !json.thread || !json.thread.posts) {
+      console.error(
+        '[MindstudioUploadService] ❌ Invalid debug logs structure',
+      );
       return null;
     }
 
@@ -92,95 +159,16 @@ export class MindstudioUploadService {
         const logs = post.debugLog?.logs || [];
         for (const log of logs) {
           if (typeof log?.value === 'string') {
-            lastValue = log.value; // Keep the last log value
+            lastValue = log.value;
           }
         }
       }
+    }
+
+    if (!lastValue) {
+      console.warn('[MindstudioUploadService] ⚠️ No debugLog value found');
     }
 
     return lastValue;
-  }
-
-  // Function to clean and structure the final output
-  private cleanAndStructureFinalOutput(finalOutput: string) {
-    try {
-      // Remove boilerplate prefix
-      const cleanedOutput = finalOutput
-        .replace(/^Execution error: Error: API Error: /, '')
-        .trim();
-
-      // Try to parse it as JSON
-      const parsed = JSON.parse(cleanedOutput);
-      const details = parsed.details;
-
-      const extractedIssues = [];
-
-      // Loop through all detail entries
-      if (Array.isArray(details)) {
-        for (const entry of details) {
-          // Try known patterns first
-          const backgroundMatches = this.extractBackgroundViolations(entry);
-          const imageMatches = this.extractImageMismatches(entry);
-
-          if (backgroundMatches.length > 0) {
-            extractedIssues.push({
-              type: 'Background Styling Issues',
-              entries: backgroundMatches,
-            });
-          } else if (imageMatches.length > 0) {
-            extractedIssues.push({
-              type: 'Image Mismatches',
-              entries: imageMatches,
-            });
-          } else {
-            // If no known patterns matched, return raw text
-            extractedIssues.push({ type: 'Unknown Issue', raw: entry });
-          }
-        }
-      }
-
-      return {
-        issues: extractedIssues,
-        errorLogUrl: parsed.errorLogUrl ?? null,
-      };
-    } catch (err) {
-      console.error('Failed to parse/structure finalOutput:', err.message);
-      return { error: 'Could not structure output', raw: finalOutput };
-    }
-  }
-
-  // Helper function to extract background violations
-  private extractBackgroundViolations(details: string): string[] {
-    const backgroundViolationPattern =
-      /Background-color (outside|in) <table> in (.+?) \(line (\d+)\)/g;
-    let match;
-    const violations = [];
-
-    while ((match = backgroundViolationPattern.exec(details)) !== null) {
-      violations.push({
-        violationType: match[1], // "outside" or "in"
-        fileName: match[2],
-        lineNumber: match[3],
-      });
-    }
-
-    return violations;
-  }
-
-  // Helper function to extract image mismatches
-  private extractImageMismatches(details: string): string[] {
-    const imageMismatchPattern =
-      /Image file "([^"]+)" (not found in ZIP|Dimension mismatch for "[^"]+": HTML \(\d+x\d+\) vs Actual \(\d+x\d+\))/g;
-    let match;
-    const mismatches = [];
-
-    while ((match = imageMismatchPattern.exec(details)) !== null) {
-      mismatches.push({
-        imagePath: match[1],
-        issue: match[2],
-      });
-    }
-
-    return mismatches;
   }
 }
