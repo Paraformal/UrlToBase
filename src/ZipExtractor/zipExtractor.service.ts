@@ -238,8 +238,23 @@ export class ZipExtractService {
         );
       results.push(...imageValidationResults);
 
+      const overallSuccess = results.every((r) => r.success);
+      const emailBody = this.generateValidationResultsEmail(
+        results,
+        overallSuccess,
+      );
+
+      const mailDto: SendMailDto = {
+        receiver: userEmail,
+        subject: 'ZIP Validation Results',
+        emailBody,
+        cc: [],
+        bcc: [],
+      };
+      await this.mailerService.sendMail(mailDto);
+
       return {
-        success: results.every((r) => r.success),
+        success: overallSuccess,
         results,
       };
     } catch (error) {
@@ -276,5 +291,71 @@ export class ZipExtractService {
   private isZipFile(data: Buffer): boolean {
     const magicNumber = data.slice(0, 2).toString('utf8');
     return magicNumber === 'PK';
+  }
+
+  private generateValidationResultsEmail(
+    results: Array<{
+      check: string;
+      success: boolean;
+      errors: string[];
+      details?: string[];
+    }>,
+    overallSuccess: boolean,
+  ): string {
+    let table = `
+      <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse; font-family:Arial, sans-serif; font-size:14px;">
+        <thead>
+          <tr style="background-color:#f2f2f2;">
+            <th>Check</th>
+            <th>Status</th>
+            <th>Messages</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    for (const result of results) {
+      const status = result.success
+        ? '<span style="color:green;">Passed ✅</span>'
+        : '<span style="color:red;">Failed ❌</span>';
+
+      const errors =
+        result.errors && result.errors.length
+          ? result.errors.map((e) => `<div>${e}</div>`).join('')
+          : '';
+
+      const details =
+        result.details && result.details.length
+          ? result.details.map((d) => `<div>${d}</div>`).join('')
+          : '';
+
+      table += `
+        <tr>
+          <td>${result.check}</td>
+          <td>${status}</td>
+          <td>${errors}</td>
+          <td>${details}</td>
+        </tr>
+      `;
+    }
+
+    table += `
+        </tbody>
+      </table>
+    `;
+
+    const summary = overallSuccess
+      ? `<p style="color:green;"><strong>All checks passed successfully.</strong></p>`
+      : `<p style="color:red;"><strong>Some checks failed. Please review the details below.</strong></p>`;
+
+    return `
+      <p>Dear Customer,</p>
+      <p>Your ZIP file has been processed. Below are the results of the checks and validations:</p>
+      ${summary}
+      ${table}
+      <p>If you have questions or need assistance, please reply to this email.</p>
+      <p>Best Regards,<br>Your Support Team</p>
+    `;
   }
 }
