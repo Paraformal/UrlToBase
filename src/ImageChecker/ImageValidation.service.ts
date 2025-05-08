@@ -7,11 +7,15 @@ import { LoggerService } from '../Utils/logger.service';
 export class ImageValidationService {
   constructor(private readonly logger: LoggerService) {}
 
-  async validateImagesFromZip(zip: AdmZip): Promise<
+  async validateImagesFromZip(
+    zip: AdmZip,
+    resized: boolean = false, // new parameter with default false
+  ): Promise<
     Array<{
       check: string;
       success: boolean;
       errors: string[];
+      resized: boolean; // add resized field in return type
     }>
   > {
     const results = [];
@@ -36,6 +40,7 @@ export class ImageValidationService {
           check: 'ZIP Content',
           success: false,
           errors: ['No images found in the ZIP file ❌'],
+          resized,
         });
         return results;
       }
@@ -64,6 +69,7 @@ export class ImageValidationService {
           check: entry.entryName,
           success,
           errors,
+          resized, // set resized flag here
         });
       }
 
@@ -74,6 +80,7 @@ export class ImageValidationService {
           check: 'ZIP Processing',
           success: false,
           errors: [error.message],
+          resized,
         },
       ];
     }

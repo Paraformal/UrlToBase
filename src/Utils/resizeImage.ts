@@ -5,6 +5,7 @@ export interface ResizeResult {
   success: boolean;
   resizedZip?: AdmZip;
   error?: string;
+  resizedImagesMap?: Record<string, boolean>; // Added to track resized images
 }
 
 export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
@@ -83,6 +84,9 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
       `[resizeImagesInZip] Initial ZIP size: ${(initialBuffer.length / 1024).toFixed(2)} KB`,
     );
 
+    // Map to track which images were resized
+    const resizedImagesMap: Record<string, boolean> = {};
+
     while (true) {
       const tempZip = await buildZip(currentImages);
       const tempBuffer = tempZip.toBuffer();
@@ -95,7 +99,23 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
         console.log(
           '[resizeImagesInZip] ZIP is under 300KB, returning success.',
         );
-        return { success: true, resizedZip: tempZip };
+
+        // Mark images that were resized compared to original images
+        for (const img of images) {
+          const currentImg = currentImages.find(
+            (ci) => ci.entry.entryName === img.entry.entryName,
+          );
+          if (!currentImg) continue;
+
+          // Compare buffers to detect resizing (simple byte length check)
+          if (!currentImg.data.equals(img.data)) {
+            resizedImagesMap[img.entry.entryName] = true;
+          } else {
+            resizedImagesMap[img.entry.entryName] = false;
+          }
+        }
+
+        return { success: true, resizedZip: tempZip, resizedImagesMap };
       }
 
       // Need to resize more
@@ -137,27 +157,24 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
           newImage = newImage.resize(newWidth);
         }
 
+        let outputBuffer: Buffer;
         if (entry.entryName.toLowerCase().endsWith('.png')) {
-          resizedImages.push({
-            entry,
-            data: await newImage.png({ quality }).toBuffer(),
-          });
+          outputBuffer = await newImage.png({ quality }).toBuffer();
         } else if (
           entry.entryName.toLowerCase().endsWith('.jpg') ||
           entry.entryName.toLowerCase().endsWith('.jpeg')
         ) {
-          resizedImages.push({
-            entry,
-            data: await newImage.jpeg({ quality }).toBuffer(),
-          });
+          outputBuffer = await newImage.jpeg({ quality }).toBuffer();
         } else if (entry.entryName.toLowerCase().endsWith('.webp')) {
-          resizedImages.push({
-            entry,
-            data: await newImage.webp({ quality }).toBuffer(),
-          });
+          outputBuffer = await newImage.webp({ quality }).toBuffer();
         } else {
-          resizedImages.push({ entry, data: await newImage.toBuffer() });
+          outputBuffer = await newImage.toBuffer();
         }
+
+        resizedImages.push({
+          entry,
+          data: outputBuffer,
+        });
       }
 
       currentImages = resizedImages;

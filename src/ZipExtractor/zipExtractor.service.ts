@@ -46,7 +46,7 @@ import { checkBackgroundStyles } from '../Utils/checkBackgroundStyles';
 import { checkScriptsAndPluginsNotAllowed } from '../Utils/checkScriptsAndPluginsNotAllowed';
 import { ImageValidationService } from 'src/ImageChecker/ImageValidation.service';
 import { runSpecificHtmlValidations } from 'src/Utils/v1_htmlChecks';
-import { resizeImagesInZip } from 'src/Utils/resizeImage';
+import { resizeImagesInZip, ResizeResult } from 'src/Utils/resizeImage';
 import { inlineExternalCssInZip } from 'src/Utils/inlineExternalCssInZip';
 
 @Injectable()
@@ -64,9 +64,16 @@ export class ZipExtractService {
   ) {}
 
   async extractAndUploadZip(base64Zip: string, userEmail: string) {
+    const results: Array<{
+      check: string;
+      success: boolean;
+      errors: string[];
+      resized?: boolean;
+    }> = [];
     try {
       this.logger.log(`Received ZIP file in base64 format`);
-
+      let resizedImages;
+      let resizeResult: ResizeResult | undefined;
       let buffer: Buffer;
       try {
         buffer = Buffer.from(base64Zip, 'base64');
@@ -81,7 +88,15 @@ export class ZipExtractService {
 
       if (fileSizeKB > 300) {
         this.logger.log(`File size > 300KB. Attempting image resizing...`);
-        const resizeResult = await resizeImagesInZip(zip);
+        resizeResult = await resizeImagesInZip(zip);
+        console.log('BERBERBER', resizeResult);
+
+        resizedImages = resizeResult.resizedImagesMap
+          ? Object.values(resizeResult.resizedImagesMap).some(
+              (val) => val === true,
+            )
+          : false;
+
         if (!resizeResult.success) {
           await this.sendErrorEmail(
             userEmail,
@@ -154,11 +169,11 @@ export class ZipExtractService {
         this.logger.error('CSS inlining errors:', cssInliningResult.errors);
       }
 
-      const results: Array<{
-        check: string;
-        success: boolean;
-        errors: string[];
-      }> = [];
+      // const results: Array<{
+      //   check: string;
+      //   success: boolean;
+      //   errors: string[];
+      // }> = [];
 
       results.push({
         check: 'Inline External CSS Check',
@@ -217,7 +232,10 @@ export class ZipExtractService {
       });
 
       const imageValidationResults =
-        await this.imageValidationService.validateImagesFromZip(zip);
+        await this.imageValidationService.validateImagesFromZip(
+          zip,
+          resizedImages,
+        );
       results.push(...imageValidationResults);
 
       return {
