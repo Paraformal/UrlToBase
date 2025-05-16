@@ -48,6 +48,8 @@ import { ImageValidationService } from 'src/ImageChecker/ImageValidation.service
 import { runSpecificHtmlValidations } from 'src/Utils/v1_htmlChecks';
 import { resizeImagesInZip, ResizeResult } from 'src/Utils/resizeImage';
 import { inlineExternalCssInZip } from 'src/Utils/inlineExternalCssInZip';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class ZipExtractService {
@@ -253,6 +255,10 @@ export class ZipExtractService {
       };
       await this.mailerService.sendMail(mailDto);
 
+      // Log the upload
+      const uploadedFileName = htmlFiles[0].entryName;
+      this.logUploadToFile(userEmail, uploadedFileName);
+
       return {
         success: overallSuccess,
         results,
@@ -357,5 +363,34 @@ export class ZipExtractService {
       <p>If you have questions or need assistance, please reply to this email.</p>
       <p>Best Regards,<br>Your Support Team</p>
     `;
+  }
+
+  private logUploadToFile(userEmail: string, filename: string) {
+    const now = new Date();
+    const timestamp = now.toISOString().replace('T', ' ').slice(0, 19);
+    const username = userEmail.split('@')[0];
+    const fileUrl = `https://example.com/files/${username}/${filename}`;
+
+    const logLine = `
+==============================
+Email: ${userEmail}
+------------------------------
+Filename: ${filename}
+URL: ${fileUrl}
+Timestamp: ${timestamp}
+`;
+
+    const logDir = path.join(__dirname, '..', '..', 'logs');
+    const logFilePath = path.join(logDir, 'upload_logs.txt');
+
+    try {
+      if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+      }
+      fs.appendFileSync(logFilePath, logLine, 'utf8');
+      this.logger.log(`Upload logged to ${logFilePath}`);
+    } catch (error) {
+      this.logger.error(`Failed to write to log file: ${error.message}`);
+    }
   }
 }
