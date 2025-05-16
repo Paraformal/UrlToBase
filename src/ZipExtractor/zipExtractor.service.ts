@@ -371,24 +371,11 @@ export class ZipExtractService {
     `;
   }
 
-  private logUploadToFile(
-    userEmail: string,
-    filename: string,
-    fileUrl?: string,
-  ) {
+  private logUploadToFile(userEmail: string, filename: string, url: string) {
     const now = new Date();
     const timestamp = now.toISOString().replace('T', ' ').slice(0, 19);
-    const username = userEmail.split('@')[0];
-    // const fileUrl = `https://example.com/files/${username}/${filename}`;
 
-    const logLine = `
-==============================
-Email: ${userEmail}
-------------------------------
-Filename: ${filename}
-URL: ${fileUrl}
-Timestamp: ${timestamp}
-`;
+    const logLine = `${userEmail} | ${filename} | ${url} | ${timestamp}\n`;
 
     const logDir = path.join(__dirname, '..', '..', 'logs');
     const logFilePath = path.join(logDir, 'upload_logs.txt');
