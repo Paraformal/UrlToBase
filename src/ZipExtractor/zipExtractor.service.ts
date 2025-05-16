@@ -51,6 +51,7 @@ import { resizeImagesInZip, ResizeResult } from 'src/Utils/resizeImage';
 import { inlineExternalCssInZip } from 'src/Utils/inlineExternalCssInZip';
 import * as fs from 'fs';
 import * as path from 'path';
+import { url } from 'inspector';
 
 @Injectable()
 export class ZipExtractService {
@@ -257,12 +258,12 @@ export class ZipExtractService {
       await this.mailerService.sendMail(mailDto);
 
       const uploadedFileName = htmlFiles[0].entryName;
-      this.logUploadToFile(userEmail, uploadedFileName);
 
       const uploadResult = await this.uploadZipToSupabase(
         buffer,
         uploadedFileName,
       );
+      this.logUploadToFile(userEmail, uploadedFileName, uploadResult.url);
 
       return {
         success: overallSuccess,
@@ -370,11 +371,15 @@ export class ZipExtractService {
     `;
   }
 
-  private logUploadToFile(userEmail: string, filename: string) {
+  private logUploadToFile(
+    userEmail: string,
+    filename: string,
+    fileUrl?: string,
+  ) {
     const now = new Date();
     const timestamp = now.toISOString().replace('T', ' ').slice(0, 19);
     const username = userEmail.split('@')[0];
-    const fileUrl = `https://example.com/files/${username}/${filename}`;
+    // const fileUrl = `https://example.com/files/${username}/${filename}`;
 
     const logLine = `
 ==============================
