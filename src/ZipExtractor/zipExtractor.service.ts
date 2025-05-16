@@ -375,8 +375,6 @@ export class ZipExtractService {
     const now = new Date();
     const timestamp = now.toISOString().replace('T', ' ').slice(0, 19);
 
-    const logLine = `${userEmail} | ${filename} | ${url} | ${timestamp}\n`;
-
     const logDir = path.join(__dirname, '..', '..', 'logs');
     const logFilePath = path.join(logDir, 'upload_logs.txt');
 
@@ -384,7 +382,36 @@ export class ZipExtractService {
       if (!fs.existsSync(logDir)) {
         fs.mkdirSync(logDir, { recursive: true });
       }
-      fs.appendFileSync(logFilePath, logLine, 'utf8');
+
+      let logContent = '';
+      if (fs.existsSync(logFilePath)) {
+        logContent = fs.readFileSync(logFilePath, 'utf8');
+      }
+
+      // Prepare the new file entry text
+      const newFileEntry = `\nFilename: ${filename}\nURL: ${url}\nTimestamp: ${timestamp}\n`;
+
+      // Regex to find user block (including the block separators)
+      // We capture everything between "Email: userEmail" and next "=============================="
+      const userBlockRegex = new RegExp(
+        `(==============================\\nEmail: ${userEmail.replace('.', '\\.')}\\n------------------------------)([\\s\\S]*?)(?=\\n==============================|$)`,
+        'm',
+      );
+
+      if (userBlockRegex.test(logContent)) {
+        // User block exists — append new file entry inside it (before next block)
+        logContent = logContent.replace(userBlockRegex, (_, header, body) => {
+          // Append new file entry right after existing body (keeping spacing)
+          return `${header}${body}${newFileEntry}\n`;
+        });
+      } else {
+        // User block does not exist — add new block at end
+        const newBlock = `==============================\nEmail: ${userEmail}\n------------------------------${newFileEntry}\n`;
+        logContent += (logContent.endsWith('\n') ? '' : '\n') + newBlock;
+      }
+
+      // Write the updated log content back
+      fs.writeFileSync(logFilePath, logContent, 'utf8');
       this.logger.log(`Upload logged to ${logFilePath}`);
     } catch (error) {
       this.logger.error(`Failed to write to log file: ${error.message}`);
