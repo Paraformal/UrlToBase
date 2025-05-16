@@ -4,6 +4,7 @@ import { MailerModule } from './Mailer/mailer.module';
 import { ImageValidationModule } from './ImageChecker/ImageValidation.module';
 import { ZipExtractModule } from './ZipExtractor/zipExtractor.module';
 import { MindstudioUploadModule } from './ApiWrapper/mindstudio-upload.module';
+import { LogsModule } from './logsRoutes/logs.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { MindstudioUploadModule } from './ApiWrapper/mindstudio-upload.module';
     ImageValidationModule,
     ZipExtractModule,
     MindstudioUploadModule,
+    LogsModule,
   ],
   providers: [LoggerService],
 })
