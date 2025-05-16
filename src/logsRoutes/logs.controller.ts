@@ -1,7 +1,7 @@
 import { Controller, Get, Header } from '@nestjs/common';
 import { LogsService } from './logs.service';
 
-@Controller('api/ntg-ms/internal/wrapper/logs')
+@Controller('user/ntg-ms/external/wrapper/logs')
 export class LogsController {
   constructor(private readonly logsService: LogsService) {}
 
