@@ -24,7 +24,7 @@ async function bootstrap() {
   });
 
   // Increase payload size
-  app.use(bodyParser.json({ limit: '5mb' }));
+  app.use(bodyParser.json({ limit: '100mb' }));
 
   await app.listen(PORT, () => {
     Logger.log(`Server is running on http://localhost:${PORT}`, 'Bootstrap');

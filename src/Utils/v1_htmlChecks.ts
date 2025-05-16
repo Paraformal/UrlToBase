@@ -62,10 +62,10 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
 
         // CSS check result
         if (hasCSSIssues) {
-          errors.push('Ext_Css_Fail ❌');
+          errors.push('External css was found ❌');
           success = false;
         } else {
-          errors.push('Ext_Css_Pass ✅');
+          errors.push('No external css used ✅');
         }
 
         // ========== URL VALIDATION ========== (ORIGINAL CODE PRESERVED)
@@ -89,9 +89,9 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
         }
 
         if (hardUrlPass) {
-          errors.push('Hard_Url_Pass ✅');
+          errors.push("All url's are hardcoded ✅");
         } else {
-          errors.push('Hard_Url_Fail ❌');
+          errors.push("Non hardocded url's were found ❌");
           success = false;
         }
 
@@ -112,9 +112,9 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
         }
 
         if (!longUrlFound) {
-          errors.push('Len_Url_Pass ✅');
+          errors.push('Urls length are less than 1024 character ✅');
         } else {
-          errors.push('Len_Url_Fail ❌');
+          errors.push('Urls length exceed 1024 character ❌');
           success = false;
         }
 
@@ -133,9 +133,9 @@ export async function runSpecificHtmlValidations(zip: AdmZip): Promise<
         }
 
         if (!widthFail) {
-          errors.push('Pix_Test_Pass ✅');
+          errors.push('Pixels test pass (pixels less or equal than 600) ✅');
         } else {
-          errors.push('Pix_Test_Fail ❌');
+          errors.push('Pixels test fail (pixels exceed than 600) ❌');
           success = false;
         }
       } catch (error) {
