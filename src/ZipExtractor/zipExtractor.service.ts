@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /*
 ### ✅ **Static Errors You Handle**
 These are the ones hardcoded in your service logic.
@@ -255,9 +256,13 @@ export class ZipExtractService {
       };
       await this.mailerService.sendMail(mailDto);
 
-      // Log the upload
       const uploadedFileName = htmlFiles[0].entryName;
       this.logUploadToFile(userEmail, uploadedFileName);
+
+      const uploadResult = await this.uploadZipToSupabase(
+        buffer,
+        uploadedFileName,
+      );
 
       return {
         success: overallSuccess,
@@ -391,6 +396,48 @@ Timestamp: ${timestamp}
       this.logger.log(`Upload logged to ${logFilePath}`);
     } catch (error) {
       this.logger.error(`Failed to write to log file: ${error.message}`);
+    }
+  }
+
+  private async uploadZipToSupabase(
+    buffer: Buffer,
+    filename: string,
+  ): Promise<{ success: boolean; url?: string; error?: string }> {
+    if (!this.bucketName) {
+      this.logger.error('Supabase bucket name is not configured.');
+      return { success: false, error: 'Bucket name not configured' };
+    }
+
+    try {
+      // Upload the file buffer to Supabase storage
+      const { data, error } = await this.supabase.storage
+        .from(this.bucketName)
+        .upload(filename, buffer, {
+          contentType: 'application/zip',
+          upsert: true,
+        });
+
+      if (error) {
+        this.logger.error(`Supabase upload error: ${error.message}`);
+        return { success: false, error: error.message };
+      }
+
+      // Generate signed URL valid for 24 hours (86400 seconds)
+      const { data: urlData, error: urlError } = await this.supabase.storage
+        .from(this.bucketName)
+        .createSignedUrl(filename, 60 * 60 * 24);
+
+      if (urlError) {
+        this.logger.error(`Supabase signed URL error: ${urlError.message}`);
+        return { success: false, error: urlError.message };
+      }
+
+      return { success: true, url: urlData.signedUrl };
+    } catch (err: any) {
+      this.logger.error(
+        `Unexpected error uploading to Supabase: ${err.message}`,
+      );
+      return { success: false, error: err.message };
     }
   }
 }
