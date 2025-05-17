@@ -257,12 +257,14 @@ export class ZipExtractService {
       };
       await this.mailerService.sendMail(mailDto);
 
-      const uploadedFileName = htmlFiles[0].entryName;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const uploadedFileName = `validated-${timestamp}.zip`;
 
       const uploadResult = await this.uploadZipToSupabase(
         buffer,
         uploadedFileName,
       );
+
       this.logUploadToFile(userEmail, uploadedFileName, uploadResult.url);
 
       return {
@@ -444,7 +446,7 @@ export class ZipExtractService {
       // Generate signed URL valid for 24 hours (86400 seconds)
       const { data: urlData, error: urlError } = await this.supabase.storage
         .from(this.bucketName)
-        .createSignedUrl(filename, 60 * 60 * 24);
+        .createSignedUrl(filename, 60 * 60 * 24 * 7);
 
       if (urlError) {
         this.logger.error(`Supabase signed URL error: ${urlError.message}`);
