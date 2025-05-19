@@ -87,6 +87,14 @@ export class ZipExtractService {
       }
 
       let zip = new AdmZip(buffer);
+
+      // ✅ Immediately delete __MACOSX folder and its contents if present
+      zip.getEntries().forEach((entry) => {
+        if (entry.entryName.startsWith('__MACOSX/')) {
+          zip.deleteFile(entry.entryName);
+        }
+      });
+
       let fileSizeKB = Math.round(buffer.byteLength / 1024);
       this.logger.log(`Received file size: ${fileSizeKB} KB`);
 
