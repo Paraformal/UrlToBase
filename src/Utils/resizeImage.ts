@@ -1,11 +1,30 @@
 import * as sharp from 'sharp';
 import * as AdmZip from 'adm-zip';
 
+export interface ResizeInfo {
+  resized: boolean;
+  originalWidth: number;
+  originalHeight: number;
+  originalSize: number;
+  originalFormat?: string;
+  originalChannels?: number;
+  originalDepth?: string;
+  originalDensity?: number;
+
+  newWidth: number;
+  newHeight: number;
+  newSize: number;
+  newFormat?: string;
+  newChannels?: number;
+  newDepth?: string;
+  newDensity?: number;
+}
+
 export interface ResizeResult {
   success: boolean;
   resizedZip?: AdmZip;
   error?: string;
-  resizedImagesMap?: Record<string, boolean>; // Added to track resized images
+  resizedImagesMap?: Record<string, ResizeInfo>;
 }
 
 export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
@@ -24,7 +43,7 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
 
       const lowerName = entry.entryName.toLowerCase();
       if (lowerName.endsWith('.html')) {
-        htmlEntries.push(entry); // Store all HTML files in an array
+        htmlEntries.push(entry);
       } else if (
         lowerName.endsWith('.png') ||
         lowerName.endsWith('.jpg') ||
@@ -34,11 +53,10 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
       ) {
         images.push({ entry, data: entry.getData() });
       } else {
-        newZip.addFile(entry.entryName, entry.getData()); // Copy other files
+        newZip.addFile(entry.entryName, entry.getData());
       }
     }
 
-    // Check if there is more than one HTML file
     if (htmlEntries.length > 1) {
       console.error(
         '[resizeImagesInZip] More than one HTML file found in the ZIP.',
@@ -49,7 +67,6 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
       };
     }
 
-    // If no HTML file found, return an error
     if (htmlEntries.length === 0) {
       console.error('[resizeImagesInZip] No HTML file found in the ZIP.');
       return { success: false, error: 'No HTML file found in the ZIP.' };
@@ -57,8 +74,7 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
 
     const htmlContent = htmlEntries[0].getData().toString('utf8');
 
-    // 2. Prepare images for resizing
-    let quality = 80; // Start quality
+    let quality = 80;
     let widthReductionFactor = 1.0;
 
     async function buildZip(
@@ -77,15 +93,13 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
 
     let currentImages = [...images];
 
-    // Log initial ZIP size
     const initialZip = await buildZip(currentImages);
     const initialBuffer = initialZip.toBuffer();
     console.log(
       `[resizeImagesInZip] Initial ZIP size: ${(initialBuffer.length / 1024).toFixed(2)} KB`,
     );
 
-    // Map to track which images were resized
-    const resizedImagesMap: Record<string, boolean> = {};
+    const resizedImagesMap: Record<string, ResizeInfo> = {};
 
     while (true) {
       const tempZip = await buildZip(currentImages);
@@ -100,25 +114,61 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
           '[resizeImagesInZip] ZIP is under 300KB, returning success.',
         );
 
-        // Mark images that were resized compared to original images
         for (const img of images) {
           const currentImg = currentImages.find(
             (ci) => ci.entry.entryName === img.entry.entryName,
           );
           if (!currentImg) continue;
 
-          // Compare buffers to detect resizing (simple byte length check)
-          if (!currentImg.data.equals(img.data)) {
-            resizedImagesMap[img.entry.entryName] = true;
-          } else {
-            resizedImagesMap[img.entry.entryName] = false;
-          }
+          const origMeta = await sharp(img.data).metadata();
+          const origSize = img.data.length;
+
+          const newMeta = await sharp(currentImg.data).metadata();
+          const newSize = currentImg.data.length;
+
+          const resized =
+            !currentImg.data.equals(img.data) ||
+            origMeta.width !== newMeta.width ||
+            origMeta.height !== newMeta.height;
+
+          resizedImagesMap[img.entry.entryName] = {
+            resized,
+            originalWidth: origMeta.width || 0,
+            originalHeight: origMeta.height || 0,
+            originalSize: origSize,
+            originalFormat: origMeta.format,
+            originalChannels: origMeta.channels,
+            originalDepth: origMeta.depth,
+            originalDensity: origMeta.density,
+
+            newWidth: newMeta.width || 0,
+            newHeight: newMeta.height || 0,
+            newSize: newSize,
+            newFormat: newMeta.format,
+            newChannels: newMeta.channels,
+            newDepth: newMeta.depth,
+            newDensity: newMeta.density,
+          };
+
+          console.log(`[resizeImagesInZip] Image: ${img.entry.entryName}`);
+          console.log(
+            `  Original - Width: ${origMeta.width}px, Height: ${origMeta.height}px, Size: ${(origSize / 1024).toFixed(2)}KB`,
+          );
+          console.log(
+            `  Original - Format: ${origMeta.format}, Channels: ${origMeta.channels}, Depth: ${origMeta.depth}, Density (DPI): ${origMeta.density}`,
+          );
+          console.log(
+            `  Resized  - Width: ${newMeta.width}px, Height: ${newMeta.height}px, Size: ${(newSize / 1024).toFixed(2)}KB`,
+          );
+          console.log(
+            `  Resized  - Format: ${newMeta.format}, Channels: ${newMeta.channels}, Depth: ${newMeta.depth}, Density (DPI): ${newMeta.density}`,
+          );
+          console.log(`  Resized flag: ${resized}`);
         }
 
         return { success: true, resizedZip: tempZip, resizedImagesMap };
       }
 
-      // Need to resize more
       if (quality > 40) {
         quality -= 10;
         console.log(`[resizeImagesInZip] Reducing quality to ${quality}.`);
@@ -137,7 +187,6 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
         };
       }
 
-      // Resize images again
       const resizedImages: { entry: AdmZip.IZipEntry; data: Buffer }[] = [];
 
       for (const { entry, data } of images) {
@@ -146,7 +195,6 @@ export async function resizeImagesInZip(zip: AdmZip): Promise<ResizeResult> {
         let newImage = image;
 
         if (metadata.width && metadata.height) {
-          // Enforce the max width to be 600px
           const newWidth = Math.min(
             Math.floor(metadata.width * widthReductionFactor),
             MAX_WIDTH,

@@ -105,7 +105,7 @@ export class ZipExtractService {
 
         resizedImages = resizeResult.resizedImagesMap
           ? Object.values(resizeResult.resizedImagesMap).some(
-              (val) => val === true,
+              (val) => val.resized === true,
             )
           : false;
 
@@ -247,6 +247,7 @@ export class ZipExtractService {
         await this.imageValidationService.validateImagesFromZip(
           zip,
           resizedImages,
+          resizeResult,
         );
       results.push(...imageValidationResults);
 

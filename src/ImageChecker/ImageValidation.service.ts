@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import * as sharp from 'sharp';
 import AdmZip from 'adm-zip';
 import { LoggerService } from '../Utils/logger.service';
+import { ResizeResult } from 'src/Utils/resizeImage';
 
 @Injectable()
 export class ImageValidationService {
@@ -10,6 +11,7 @@ export class ImageValidationService {
   async validateImagesFromZip(
     zip: AdmZip,
     resized: boolean = false, // new parameter with default false
+    resizeResult?: ResizeResult,
   ): Promise<
     Array<{
       check: string;
@@ -46,6 +48,7 @@ export class ImageValidationService {
       }
 
       for (const entry of imageEntries) {
+        const imageName = entry.entryName;
         const errors = [];
         let success = true;
 
@@ -59,6 +62,19 @@ export class ImageValidationService {
         } catch (error) {
           success = false;
           errors.push(error.message);
+        }
+
+        const resizeInfo = resizeResult?.resizedImagesMap?.[imageName];
+        console.log(
+          `BABABABABABAB [ImageValidationService] Resize info for ${imageName}:`,
+          resizeInfo,
+        );
+
+        if (resizeInfo) {
+          errors.push(
+            `Original: ${resizeInfo.originalWidth}x${resizeInfo.originalHeight}px, ${(resizeInfo.originalSize / 1024).toFixed(1)}KB, Format: ${resizeInfo.originalFormat ?? 'unknown'}, Channels: ${resizeInfo.originalChannels ?? 'unknown'}, Depth: ${resizeInfo.originalDepth ?? 'unknown'}, DPI: ${resizeInfo.originalDensity ?? 'unknown'}`,
+            `Resized: ${resizeInfo.newWidth}x${resizeInfo.newHeight}px, ${(resizeInfo.newSize / 1024).toFixed(1)}KB, Format: ${resizeInfo.newFormat ?? 'unknown'}, Channels: ${resizeInfo.newChannels ?? 'unknown'}, Depth: ${resizeInfo.newDepth ?? 'unknown'}, DPI: ${resizeInfo.newDensity ?? 'unknown'}`,
+          );
         }
 
         if (errors.length === 0) {
